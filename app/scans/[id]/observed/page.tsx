@@ -656,6 +656,8 @@ export default async function ScanObservedPage({
         scanIdShort={shortScanId(id)}
         duration={formatScanDuration(scan.startedAt, scan.completedAt)}
         compareHref={tabHref("compare")}
+        scanId={id}
+        exportAvailability={availability}
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">

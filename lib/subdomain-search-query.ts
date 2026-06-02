@@ -1,5 +1,3 @@
-import type { Prisma } from "@prisma/client";
-
 export type SearchBuilderRow = {
   id: string;
   term: string;
@@ -83,13 +81,26 @@ export function parseSubdomainSearchGroups(searchStr: string): string[][] {
 const MIN_PLAIN_LEN = 3;
 const MIN_TERM_LEN = 2;
 
+type HostnameNormalizedContains = {
+  hostnameNormalized: { contains: string; mode: "insensitive" };
+};
+
+/** Hostname filter shape shared by Subdomain and ScanObservedSubdomain queries. */
+export type HostnameNormalizedSearchWhere =
+  | HostnameNormalizedContains
+  | {
+      OR: Array<
+        HostnameNormalizedContains | { AND: HostnameNormalizedContains[] }
+      >;
+    };
+
 export function isSubdomainSearchQueryActive(searchStr: string): boolean {
   return subdomainHostnameSearchWhere(searchStr) !== undefined;
 }
 
 export function subdomainHostnameSearchWhere(
   searchStr: string,
-): Prisma.SubdomainWhereInput | undefined {
+): HostnameNormalizedSearchWhere | undefined {
   const trimmed = searchStr.trim();
   if (!trimmed) return undefined;
 

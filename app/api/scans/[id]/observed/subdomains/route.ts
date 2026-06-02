@@ -5,6 +5,7 @@ import {
   normalizeSkip,
   normalizeTake,
 } from "@/lib/scan-observed";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { subdomainHostnameSearchWhere } from "@/lib/subdomain-search-query";
 
@@ -43,7 +44,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const skip = normalizeSkip(searchParams.get("skip"));
   const q = searchParams.get("q")?.trim() || undefined;
 
-  const where = {
+  const where: Prisma.ScanObservedSubdomainWhereInput = {
     scanJobId: id,
     ...(q ? (subdomainHostnameSearchWhere(q) ?? {}) : {}),
   };

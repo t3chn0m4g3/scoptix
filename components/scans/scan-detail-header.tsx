@@ -1,11 +1,11 @@
 import Link from "next/link";
+import { ScanExportMenu } from "@/components/scans/scan-export-menu";
 import { TopBarControls } from "@/components/top-bar-controls";
 import {
   IconArrowUpRight,
   IconCheckCircle,
-  IconChevronDown,
-  IconDownload,
 } from "@/components/ui-icons";
+import type { ObservedAvailability } from "@/lib/scan-observed";
 
 type ScanDetailHeaderProps = {
   domain: string;
@@ -15,7 +15,8 @@ type ScanDetailHeaderProps = {
   scanIdShort: string;
   duration: string;
   compareHref: string;
-  exportHref?: string;
+  scanId: string;
+  exportAvailability: ObservedAvailability;
 };
 
 const STATUS_COMPLETED = new Set(["COMPLETED", "completed"]);
@@ -28,7 +29,8 @@ export function ScanDetailHeader({
   scanIdShort,
   duration,
   compareHref,
-  exportHref,
+  scanId,
+  exportAvailability,
 }: ScanDetailHeaderProps) {
   const completed = STATUS_COMPLETED.has(status);
 
@@ -80,27 +82,7 @@ export function ScanDetailHeader({
               <IconArrowUpRight className="mr-1.5 size-3.5 rotate-45" />
               Compare
             </Link>
-            {exportHref ? (
-              <a
-                href={exportHref}
-                className="inline-flex items-center rounded-lg border border-line px-3 py-1.5 text-[12px] font-medium text-cream transition hover:bg-[var(--nav-hover-bg)]"
-              >
-                <IconDownload className="mr-1.5 size-3.5" />
-                Export
-                <IconChevronDown className="ml-1.5 size-3.5 text-muted" />
-              </a>
-            ) : (
-              <button
-                type="button"
-                disabled
-                className="inline-flex cursor-not-allowed items-center rounded-lg border border-line px-3 py-1.5 text-[12px] font-medium text-muted opacity-60"
-                title="Export coming soon"
-              >
-                <IconDownload className="mr-1.5 size-3.5" />
-                Export
-                <IconChevronDown className="ml-1.5 size-3.5" />
-              </button>
-            )}
+            <ScanExportMenu scanId={scanId} availability={exportAvailability} />
           </div>
         </div>
       </div>
