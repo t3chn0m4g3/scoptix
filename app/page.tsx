@@ -7,13 +7,23 @@ import {
   DashboardScanActivityChart,
   DashboardScanStatusChart,
 } from "@/components/dashboard-charts";
-import { PageHeader } from "@/components/page-header";
+import { DashboardGreeting } from "@/components/dashboard-greeting";
+import { DashboardPeriodMenu } from "@/components/dashboard-period-menu";
+import { DashboardInsightsRow } from "@/components/dashboard/dashboard-insights-row";
+import { DashboardStatCards } from "@/components/dashboard-stat-cards";
+import { loadDashboardInsights } from "@/lib/dashboard-insights";
 import { TopBar } from "@/components/top-bar";
 import {
   dashboardChartRangeParams,
   loadDashboardCharts,
   parseActivityRange,
 } from "@/lib/dashboard-stats";
+import {
+  DEFAULT_DASHBOARD_PERIOD,
+  dashboardPeriodSiblingParams,
+  loadDashboardOverview,
+  parseDashboardPeriod,
+} from "@/lib/dashboard-overview";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -30,63 +40,53 @@ const STATUS_STYLE: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ scanRange?: string; findingsRange?: string; range?: string }>;
+  searchParams: Promise<{
+    scanRange?: string;
+    findingsRange?: string;
+    range?: string;
+    period?: string;
+  }>;
 }) {
   const params = await searchParams;
   const scanRange = parseActivityRange(params.scanRange ?? params.range);
   const findingsRange = parseActivityRange(params.findingsRange ?? params.range);
-  const rangeParams = dashboardChartRangeParams(scanRange, findingsRange);
+  const periodKey = parseDashboardPeriod(params.period);
+  const rangeParams: Record<string, string> = {
+    ...dashboardChartRangeParams(scanRange, findingsRange),
+  };
+  if (periodKey !== DEFAULT_DASHBOARD_PERIOD) rangeParams.period = periodKey;
 
-  const [stats, scansRunning, recentScans, charts] = await Promise.all([
-    prisma.targetDomain.aggregate({
-      _sum: { cachedUrlCount: true, cachedFindingCount: true },
-      _count: { _all: true },
-    }),
-    prisma.scanJob.count({ where: { status: ScanJobStatus.RUNNING } }),
+  const periodSiblingParams = dashboardPeriodSiblingParams(
+    rangeParams.scanRange,
+    rangeParams.findingsRange,
+  );
+
+  const [recentScans, charts, overview, insights] = await Promise.all([
     prisma.scanJob.findMany({
       orderBy: { createdAt: "desc" },
       take: 10,
       include: { targetDomain: true },
     }),
     loadDashboardCharts(prisma, { scanRangeKey: scanRange, findingsRangeKey: findingsRange }),
+    loadDashboardOverview(prisma, periodKey),
+    loadDashboardInsights(prisma),
   ]);
-
-  const targets = stats._count._all;
-  const urls = stats._sum.cachedUrlCount ?? 0;
-  const findings = stats._sum.cachedFindingCount ?? 0;
 
   return (
     <>
       <TopBar breadcrumb="/ overview" />
       <main className="min-h-0 flex-1 overflow-y-auto px-6 py-8">
-        <PageHeader eyebrow="Surface intelligence" title="Dashboard" />
+        <div className="flex items-end justify-between gap-4">
+          <DashboardGreeting />
+          <DashboardPeriodMenu current={periodKey} siblingParams={periodSiblingParams} />
+        </div>
 
         <div className="mt-8 space-y-8">
           <DashboardFailedScanAlert count={charts.recentFailedCount} />
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="glass-panel relative overflow-hidden rounded-2xl p-5">
-              <div className="absolute -right-4 -top-4 size-28 rounded-full bg-accent/8 blur-2xl" />
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-page-eyebrow-accent">Targets</div>
-              <div className="mt-2 font-mono text-3xl text-cream">{targets.toLocaleString()}</div>
-              <div className="mt-2 text-[11px] text-muted">Root domains stored</div>
-            </div>
-            <div className="glass-panel rounded-2xl p-5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-page-eyebrow-accent">Discovered URLs</div>
-              <div className="mt-2 font-mono text-3xl text-cream">{urls.toLocaleString()}</div>
-              <div className="mt-2 text-[11px] text-muted">Dedup exact per target</div>
-            </div>
-            <div className="glass-panel rounded-2xl p-5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-page-eyebrow-accent">Findings</div>
-              <div className="mt-2 font-mono text-3xl text-cream">{findings.toLocaleString()}</div>
-              <div className="mt-2 text-[11px] text-muted">Regex (URL string + body)</div>
-            </div>
-            <div className="glass-panel rounded-2xl p-5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-page-eyebrow-accent">Running scans</div>
-              <div className="mt-2 font-mono text-3xl text-cream">{scansRunning.toLocaleString()}</div>
-              <div className="mt-2 text-[11px] text-muted">Worker concurrency = 1</div>
-            </div>
-          </div>
+          <DashboardStatCards stats={overview.stats} periodLabel={overview.period.label} />
+
+          <DashboardInsightsRow data={insights} />
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <div className="xl:col-span-2">

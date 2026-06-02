@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   IconCloud,
   IconCreditCard,
@@ -21,14 +22,14 @@ import {
 import type { SummaryRankIconKind } from "@/lib/summary-rank-style";
 import type { SummaryRankRow } from "@/lib/scan-summary";
 
-const rankRowGridClass =
+export const summaryRankRowGridClass =
   "grid grid-cols-[minmax(0,1fr)_2.75rem_minmax(0,1fr)] items-center gap-x-2";
 
 /** Change column body: delta value, trend arrow, relative bar. */
 const changeRowGridClass =
   "grid grid-cols-[2.75rem_0.75rem_minmax(1.25rem,1fr)] items-center gap-x-1.5";
 
-const changeAreaPad = "pl-2.5 sm:pl-3";
+export const summaryRankChangeAreaPad = "pl-2.5 sm:pl-3";
 
 function RankTypeIcon({
   kind,
@@ -80,7 +81,7 @@ export function SummaryRankRow({
 }) {
   return (
     <div
-      className={`${rankRowGridClass} border-b py-1.5 text-[12px] [border-bottom-color:color-mix(in_srgb,var(--color-line)_60%,transparent)] last:border-0`}
+      className={`${summaryRankRowGridClass} border-b py-1.5 text-[12px] [border-bottom-color:color-mix(in_srgb,var(--color-line)_60%,transparent)] last:border-0`}
     >
       <div className="flex min-w-0 items-center">
         {showIcon ? (
@@ -96,7 +97,7 @@ export function SummaryRankRow({
       <div className="text-left font-normal text-cream tabular-nums">
         {row.count.toLocaleString()}
       </div>
-      <div className={`${changeRowGridClass} ${changeAreaPad}`}>
+      <div className={`${changeRowGridClass} ${summaryRankChangeAreaPad}`}>
         <span
           className={[
             "text-left font-normal tabular-nums",
@@ -146,18 +147,76 @@ export function SummaryRankRow({
 export function SummaryRankTableHeader({
   labelCol,
   countLabel,
+  changeLabel = "Change (vs last scan)",
 }: {
   labelCol: string;
   countLabel: string;
+  /** Set to `false` to reserve the third column without a label (e.g. bar-only rows). */
+  changeLabel?: string | false;
 }) {
   return (
     <div
-      className={`${rankRowGridClass} mb-1.5 border-b pb-1.5 text-[10px] font-bold text-muted [border-bottom-color:color-mix(in_srgb,var(--color-line)_60%,transparent)]`}
+      className={`${summaryRankRowGridClass} mb-1.5 border-b pb-1.5 text-[10px] font-bold text-muted [border-bottom-color:color-mix(in_srgb,var(--color-line)_60%,transparent)]`}
     >
       <span>{labelCol}</span>
       <span className="text-left">{countLabel}</span>
-      <div className={`${changeRowGridClass} ${changeAreaPad}`}>
-        <span className="col-span-3 whitespace-nowrap">Change (vs last scan)</span>
+      <div className={`${changeRowGridClass} ${summaryRankChangeAreaPad}`}>
+        {changeLabel !== false ? (
+          <span className="col-span-3 whitespace-nowrap">{changeLabel}</span>
+        ) : (
+          <span className="col-span-3" aria-hidden />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function TargetFindingsTableHeader() {
+  return (
+    <div
+      className={`${summaryRankRowGridClass} mb-1.5 border-b pb-1.5 text-[10px] font-bold text-muted [border-bottom-color:color-mix(in_srgb,var(--color-line)_60%,transparent)]`}
+    >
+      <span className="min-w-0 truncate text-left">Asset</span>
+      <span className="text-left">Count</span>
+      <div className={summaryRankChangeAreaPad} aria-hidden />
+    </div>
+  );
+}
+
+export function TargetFindingsRankRow({
+  domain,
+  href,
+  count,
+  barWidthPercent,
+}: {
+  domain: string;
+  href: string;
+  count: number;
+  barWidthPercent: number;
+}) {
+  return (
+    <div
+      className={`${summaryRankRowGridClass} border-b py-1.5 text-[12px] [border-bottom-color:color-mix(in_srgb,var(--color-line)_60%,transparent)] last:border-0`}
+    >
+      <Link
+        href={href}
+        className="block min-w-0 truncate text-left font-medium text-cream hover:text-accent"
+        title={domain}
+      >
+        {domain}
+      </Link>
+      <div className="text-left font-normal text-cream tabular-nums">{count.toLocaleString()}</div>
+      <div className={summaryRankChangeAreaPad}>
+        <div
+          className="h-1.5 min-w-[1.25rem] rounded-full bg-line/30"
+          role="presentation"
+          aria-hidden
+        >
+          <div
+            className="h-full rounded-full bg-accent transition-[width]"
+            style={{ width: `${barWidthPercent}%` }}
+          />
+        </div>
       </div>
     </div>
   );

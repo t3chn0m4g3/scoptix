@@ -1,10 +1,20 @@
 import type { SummarySourceSlice } from "@/lib/scan-summary";
+import {
+  DonutCircleClip,
+  DonutTexturedSegment,
+  DonutWaterPattern,
+  donutClipPathId,
+  donutTexturePatternId,
+} from "@/components/scans/donut-chart-texture";
 
 const SIZE = 160;
 const CX = 80;
 const CY = 80;
 const OUTER_R = 80;
 const INNER_R = 48;
+
+const TEXTURE_PATTERN_ID = donutTexturePatternId("sources-donut");
+const CLIP_PATH_ID = donutClipPathId("sources-donut");
 
 /** Satu arah 135° untuk seluruh chart — hindari gradient “mengikuti” bentuk tiap irisan (efek air). */
 const GRADIENT_135 = {
@@ -79,10 +89,20 @@ export function SourcesDonutChart({
             <stop offset="0%" stopColor="#7c3aed" />
             <stop offset="100%" stopColor="#9333ea" />
           </linearGradient>
+          <DonutCircleClip id={CLIP_PATH_ID} />
+          <DonutWaterPattern id={TEXTURE_PATTERN_ID} />
         </defs>
-        {segments.map((seg) => (
-          <path key={seg.key} d={seg.path} fill={seg.fill} />
-        ))}
+        <g clipPath={`url(#${CLIP_PATH_ID})`}>
+          {segments.map((seg) => (
+            <g key={seg.key}>
+              <DonutTexturedSegment
+                path={seg.path}
+                fill={seg.fill}
+                patternId={TEXTURE_PATTERN_ID}
+              />
+            </g>
+          ))}
+        </g>
       </svg>
       <div className="scx-donut-center absolute inset-8 flex flex-col items-center justify-center rounded-full bg-lift">
         <span className="text-lg font-bold leading-none text-cream">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useTheme } from "@/components/theme-provider";
 
 function utcTimeHms() {
@@ -61,7 +61,7 @@ export function TopBarControls({ compact }: { compact?: boolean }) {
           compact ? "px-2 py-1" : "rounded-xl px-3 py-1.5",
         ].join(" ")}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Accent</span>
+        <span className="text-[10px] font-medium text-muted">Accent</span>
         <input
           aria-label="Accent hue"
           type="range"
@@ -69,7 +69,8 @@ export function TopBarControls({ compact }: { compact?: boolean }) {
           max={360}
           value={accentHue}
           onChange={(e) => setAccentHue(Number(e.target.value))}
-          className={compact ? "w-20 accent-accent" : "w-28 accent-accent md:w-32"}
+          className="scx-accent-hue-slider w-20"
+          style={{ "--slider-fill": `${(accentHue / 360) * 100}%` } as CSSProperties}
         />
       </div>
 
