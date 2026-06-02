@@ -13,6 +13,12 @@ import {
   type UrlTabPreserve,
 } from "@/lib/url-tab-params";
 import { prisma } from "@/lib/prisma";
+import {
+  categorySlugForPathnameExtension,
+  countDiscoveredUrlsByCategory,
+  loadExtensionSuffixRules,
+  urlCategoryPathnameWhere,
+} from "@/lib/extension-category";
 import { TopBar } from "@/components/top-bar";
 
 export const dynamic = "force-dynamic";
@@ -64,20 +70,18 @@ export default async function TargetDetailPage({
       ? await prisma.extensionCategory.findMany({ orderBy: { slug: "asc" } })
       : [];
 
-  const categoryCountsRaw =
+  const [urlCategoryCounts, suffixRules] =
     tab === "urls"
-      ? await prisma.discoveredUrl.groupBy({
-          by: ["extensionCategoryId"],
-          where: { targetDomainId: target.id },
-          _count: { _all: true },
-        })
-      : [];
-  const countByCategoryId = new Map<number, number>();
-  let uncategorizedCount = 0;
-  for (const row of categoryCountsRaw) {
-    if (row.extensionCategoryId == null) uncategorizedCount += row._count._all;
-    else countByCategoryId.set(row.extensionCategoryId, row._count._all);
-  }
+      ? await Promise.all([
+          countDiscoveredUrlsByCategory(prisma, target.id),
+          loadExtensionSuffixRules(prisma),
+        ])
+      : [null, []];
+  const countByCategoryId = urlCategoryCounts?.countByCategoryId ?? new Map<number, number>();
+  const uncategorizedCount = urlCategoryCounts?.uncategorizedCount ?? 0;
+  const categoryById = new Map(
+    (tab === "urls" ? categories : []).map((c) => [c.id, c]),
+  );
 
   const activeCategoryId =
     categorySlug === "all"
@@ -130,11 +134,7 @@ export default async function TargetDetailPage({
     targetDomainId: target.id,
     ...(urlSearchFilter ?? {}),
     ...(urlExcludeFilter ?? {}),
-    ...(activeCategoryId === null
-      ? {}
-      : activeCategoryId === -1
-        ? { extensionCategoryId: null }
-        : { extensionCategoryId: activeCategoryId }),
+    ...urlCategoryPathnameWhere(activeCategoryId, suffixRules),
   } as const;
 
   const totalUrls = tab === "urls" ? await prisma.discoveredUrl.count({ where: urlWhere }) : 0;
@@ -148,7 +148,6 @@ export default async function TargetDetailPage({
           orderBy: { createdAt: "desc" },
           skip: (safePage - 1) * perPage,
           take: perPage,
-          include: { extensionCategory: true },
         })
       : [];
 
@@ -380,7 +379,11 @@ export default async function TargetDetailPage({
                       <div className="break-all font-mono text-[12px] text-cream leading-relaxed">{u.urlText}</div>
                       <div className="mt-1.5 flex items-center gap-2 text-[10px] text-muted">
                         <span className="rounded-md bg-accent/8 px-1.5 py-0.5 font-mono text-accent">
-                          {u.extensionCategory?.slug ?? "uncategorized"}
+                          {categorySlugForPathnameExtension(
+                            suffixRules,
+                            u.pathnameExtension,
+                            categoryById,
+                          )}
                         </span>
                         {u.pathnameExtension && (
                           <span className="font-mono">{u.pathnameExtension}</span>

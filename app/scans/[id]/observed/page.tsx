@@ -52,6 +52,12 @@ import {
   getObservedScanSummary,
 } from "@/lib/scan-observed";
 import { prisma } from "@/lib/prisma";
+import {
+  categorySlugForPathnameExtension,
+  countObservedUrlsByCategory,
+  loadExtensionSuffixRules,
+  urlCategoryPathnameWhere,
+} from "@/lib/extension-category";
 
 export const dynamic = "force-dynamic";
 
@@ -98,22 +104,12 @@ type ObservedSubdomainRow = {
   } | null;
 };
 
-type ObservedUrlGroupRow = {
-  extensionCategoryId: number | null;
-  _count: {
-    _all: number;
-  };
-};
-
 type ObservedUrlRow = {
   id: string;
   urlText: string;
   hostnameNormalized: string;
   pathnameExtension: string | null;
   createdAt: Date;
-  extensionCategory: {
-    slug: string;
-  } | null;
 };
 
 export default async function ScanObservedPage({
@@ -181,9 +177,6 @@ export default async function ScanObservedPage({
         findMany: (
           args: Record<string, unknown>,
         ) => Promise<ObservedUrlRow[]>;
-        groupBy: (
-          args: Record<string, unknown>,
-        ) => Promise<ObservedUrlGroupRow[]>;
       };
     }
   ).scanObservedUrl;
@@ -191,7 +184,7 @@ export default async function ScanObservedPage({
   const availability = getObservedAvailability({
     observedVersion: snapshotScan.observedVersion,
   });
-  const [observedFindingCount, observedSubdomainCount, observedUrlCount, urlCategoryGroups] =
+  const [observedFindingCount, observedSubdomainCount, observedUrlCount, urlCategoryCounts] =
     await Promise.all([
       snapshotScan.observedFindingCount ??
         prisma.analysisFinding.count({ where: { scanJobId: id } }),
@@ -204,17 +197,11 @@ export default async function ScanObservedPage({
           observedUrlModel.count({ where: { scanJobId: id } })
         : Promise.resolve(null),
       availability.urls === "ready"
-        ? observedUrlModel.groupBy({
-            by: ["extensionCategoryId"],
-            where: { scanJobId: id },
-            _count: { _all: true },
-          })
-        : Promise.resolve([] as ObservedUrlGroupRow[]),
+        ? countObservedUrlsByCategory(prisma, id)
+        : Promise.resolve(null),
     ]);
 
-  const categorizedUrlCount = urlCategoryGroups
-    .filter((row) => row.extensionCategoryId != null)
-    .reduce((sum, row) => sum + row._count._all, 0);
+  const categorizedUrlCount = urlCategoryCounts?.categorizedCount ?? 0;
   const summaryData =
     tab === "summary"
       ? await loadScanSummary(
@@ -293,26 +280,17 @@ export default async function ScanObservedPage({
   const isCompleted = scan.status === ScanJobStatus.COMPLETED;
   const showPartialNotice = scan.status !== ScanJobStatus.COMPLETED;
 
-  const categories =
+  const [categories, suffixRules] =
     tab === "urls" && availability.urls === "ready"
-      ? await prisma.extensionCategory.findMany({ orderBy: { slug: "asc" } })
-      : [];
+      ? await Promise.all([
+          prisma.extensionCategory.findMany({ orderBy: { slug: "asc" } }),
+          loadExtensionSuffixRules(prisma),
+        ])
+      : [[], []];
 
-  const categoryCountsRaw =
-    tab === "urls" && availability.urls === "ready"
-      ? await observedUrlModel.groupBy({
-          by: ["extensionCategoryId"],
-          where: { scanJobId: id },
-          _count: { _all: true },
-        })
-      : [];
-
-  const countByCategoryId = new Map<number, number>();
-  let uncategorizedCount = 0;
-  for (const row of categoryCountsRaw) {
-    if (row.extensionCategoryId == null) uncategorizedCount += row._count._all;
-    else countByCategoryId.set(row.extensionCategoryId, row._count._all);
-  }
+  const countByCategoryId = urlCategoryCounts?.countByCategoryId ?? new Map<number, number>();
+  const uncategorizedCount = urlCategoryCounts?.uncategorizedCount ?? 0;
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
 
   const selectedCategory =
     categorySlug === "all" || categorySlug === "uncategorized"
@@ -488,11 +466,7 @@ export default async function ScanObservedPage({
     scanJobId: id,
     ...(urlSearchFilter ?? {}),
     ...(urlExcludeFilter ?? {}),
-    ...(activeCategoryId === null
-      ? {}
-      : activeCategoryId === -1
-        ? { extensionCategoryId: null }
-        : { extensionCategoryId: activeCategoryId }),
+    ...urlCategoryPathnameWhere(activeCategoryId, suffixRules),
   } as const;
   const urlsTotal =
     tab === "urls" && availability.urls === "ready"
@@ -507,9 +481,6 @@ export default async function ScanObservedPage({
           orderBy: { createdAt: "desc" },
           skip: (safeUrlsPage - 1) * perPage,
           take: perPage,
-          include: {
-            extensionCategory: true,
-          },
         })
       : [];
 
@@ -1096,7 +1067,11 @@ export default async function ScanObservedPage({
                           </div>
                           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-muted">
                             <span className="rounded-md bg-accent/8 px-1.5 py-0.5 font-mono text-accent">
-                              {url.extensionCategory?.slug ?? "uncategorized"}
+                              {categorySlugForPathnameExtension(
+                                suffixRules,
+                                url.pathnameExtension,
+                                categoryById,
+                              )}
                             </span>
                             <span className="font-mono">{url.hostnameNormalized}</span>
                             {url.pathnameExtension && (

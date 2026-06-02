@@ -7,11 +7,63 @@ import {
 import type { ObservedAvailability } from "@/lib/scan-observed";
 import { prisma } from "@/lib/prisma";
 import {
+  countObservedUrlsByCategory,
+  type UrlCategoryCounts,
+} from "@/lib/extension-category";
+import {
   resolveCategoryRankVisual,
   resolveFindingRankVisual,
   type RankVisual,
   type SummaryRankIconKind,
 } from "@/lib/summary-rank-style";
+
+function buildUrlCategoryRankItems(
+  counts: UrlCategoryCounts | null,
+  categories: { id: number; displayName: string }[],
+) {
+  if (!counts) return [];
+
+  const items: { label: string; count: number }[] = [];
+  if (counts.uncategorizedCount > 0) {
+    items.push({ label: "Uncategorized", count: counts.uncategorizedCount });
+  }
+  for (const cat of categories) {
+    const count = counts.countByCategoryId.get(cat.id) ?? 0;
+    if (count > 0) {
+      items.push({ label: cat.displayName, count });
+    }
+  }
+  return items.sort((a, b) => b.count - a.count).slice(0, 10);
+}
+
+function countUrlCategoryBuckets(counts: UrlCategoryCounts | null): number {
+  if (!counts) return 0;
+  let total = 0;
+  if (counts.uncategorizedCount > 0) total += 1;
+  for (const n of counts.countByCategoryId.values()) {
+    if (n > 0) total += 1;
+  }
+  return total;
+}
+
+function buildUrlCategoryLabelCountMap(
+  counts: UrlCategoryCounts | null,
+  categories: { id: number; displayName: string }[],
+) {
+  const map = new Map<string, number>();
+  if (!counts) return map;
+
+  if (counts.uncategorizedCount > 0) {
+    map.set("Uncategorized", counts.uncategorizedCount);
+  }
+  for (const cat of categories) {
+    const count = counts.countByCategoryId.get(cat.id) ?? 0;
+    if (count > 0) {
+      map.set(cat.displayName, count);
+    }
+  }
+  return map;
+}
 
 export type SummaryRankRow = {
   label: string;
@@ -231,9 +283,6 @@ export async function loadScanSummary(
   const observedUrlModel = (
     prisma as typeof prisma & {
       scanObservedUrl: {
-        groupBy: (args: Record<string, unknown>) => Promise<
-          { extensionCategoryId: number | null; _count: { _all: number } }[]
-        >;
         findMany: (args: Record<string, unknown>) => Promise<
           {
             id: string;
@@ -255,7 +304,7 @@ export async function loadScanSummary(
     select: { id: true, completedAt: true, createdAt: true },
   });
 
-  const [findingGroups, urlCategoryGroups, categories, latestFindingRows] =
+  const [findingGroups, urlCategoryCounts, categories, latestFindingRows] =
     await Promise.all([
       prisma.analysisFinding.groupBy({
         by: ["findingType"],
@@ -264,12 +313,8 @@ export async function loadScanSummary(
         orderBy: { _count: { findingType: "desc" } },
       }),
       availability.urls === "ready"
-        ? observedUrlModel.groupBy({
-            by: ["extensionCategoryId"],
-            where: { scanJobId: scanId },
-            _count: { _all: true },
-          })
-        : Promise.resolve([]),
+        ? countObservedUrlsByCategory(prisma, scanId)
+        : Promise.resolve(null),
       prisma.extensionCategory.findMany({
         select: { id: true, slug: true, displayName: true },
       }),
@@ -291,14 +336,10 @@ export async function loadScanSummary(
       })
     : [];
 
-  const previousUrlGroups =
+  const previousUrlCategoryCounts =
     previousScan && availability.urls === "ready"
-      ? await observedUrlModel.groupBy({
-          by: ["extensionCategoryId"],
-          where: { scanJobId: previousScan.id },
-          _count: { _all: true },
-        })
-      : [];
+      ? await countObservedUrlsByCategory(prisma, previousScan.id)
+      : null;
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const previousFindingsByType = new Map(
@@ -316,32 +357,22 @@ export async function loadScanSummary(
   );
   const findingsTypeTotal = findingGroups.length;
 
-  const urlCategoryItems = urlCategoryGroups
-    .map((row) => {
-      const cat = row.extensionCategoryId
-        ? categoryById.get(row.extensionCategoryId)
-        : null;
-      return {
-        label: cat?.displayName ?? "Uncategorized",
-        count: row._count._all,
-      };
-    })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
+  const urlCategoryItems = buildUrlCategoryRankItems(
+    urlCategoryCounts,
+    categories,
+  );
 
-  const previousUrlByLabel = new Map<string, number>();
-  for (const row of previousUrlGroups) {
-    const cat = row.extensionCategoryId ? categoryById.get(row.extensionCategoryId) : null;
-    const label = cat?.displayName ?? "Uncategorized";
-    previousUrlByLabel.set(label, row._count._all);
-  }
+  const previousUrlByLabel = buildUrlCategoryLabelCountMap(
+    previousUrlCategoryCounts,
+    categories,
+  );
 
   const urlCategoriesTop10 = buildRankRows(
     urlCategoryItems.map(({ label, count }) => ({ label, count })),
     previousUrlByLabel,
     resolveCategoryRankVisual,
   );
-  const urlCategoryTotal = urlCategoryGroups.length;
+  const urlCategoryTotal = countUrlCategoryBuckets(urlCategoryCounts);
 
   const changes: ScanSummaryData["changes"] = {
     baselineScanId: previousScan?.id ?? null,

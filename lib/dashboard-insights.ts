@@ -153,7 +153,7 @@ export async function loadDashboardInsights(prisma: PrismaClient): Promise<Dashb
   const [topTargets, lastCompletedScan, latestAnyScan, findingGroups] = await Promise.all([
     prisma.targetDomain.findMany({
       orderBy: [{ cachedFindingCount: "desc" }, { domainNormalized: "asc" }],
-      take: 5,
+      take: 6,
       select: {
         id: true,
         domainNormalized: true,

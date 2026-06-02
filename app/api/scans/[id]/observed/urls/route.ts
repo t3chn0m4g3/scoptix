@@ -6,6 +6,11 @@ import {
   normalizeTake,
 } from "@/lib/scan-observed";
 import { prisma } from "@/lib/prisma";
+import {
+  categorySlugForPathnameExtension,
+  loadExtensionSuffixRules,
+  urlCategoryPathnameWhere,
+} from "@/lib/extension-category";
 
 export const dynamic = "force-dynamic";
 
@@ -46,6 +51,21 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     categoryIdRaw != null && categoryIdRaw !== ""
       ? Number(categoryIdRaw)
       : undefined;
+  const uncategorizedOnly = searchParams.get("uncategorized") === "1";
+
+  const [suffixRules, categories] = await Promise.all([
+    loadExtensionSuffixRules(prisma),
+    prisma.extensionCategory.findMany({
+      select: { id: true, slug: true, displayName: true },
+    }),
+  ]);
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+
+  const activeCategoryId = uncategorizedOnly
+    ? -1
+    : Number.isInteger(categoryId)
+      ? categoryId!
+      : null;
 
   const where = {
     scanJobId: id,
@@ -57,29 +77,44 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
           },
         }
       : {}),
-    ...(Number.isInteger(categoryId)
-      ? { extensionCategoryId: categoryId }
-      : {}),
+    ...urlCategoryPathnameWhere(activeCategoryId, suffixRules),
   };
 
-  const [urls, total] = await Promise.all([
+  const [urlRows, total] = await Promise.all([
     prisma.scanObservedUrl.findMany({
       where,
       take,
       skip,
       orderBy: { createdAt: "desc" },
-      include: {
-        extensionCategory: {
-          select: {
-            id: true,
-            slug: true,
-            displayName: true,
-          },
-        },
+      select: {
+        id: true,
+        urlText: true,
+        hostnameNormalized: true,
+        pathnameExtension: true,
+        createdAt: true,
       },
     }),
     prisma.scanObservedUrl.count({ where }),
   ]);
+
+  const urls = urlRows.map((row) => {
+    const slug = categorySlugForPathnameExtension(
+      suffixRules,
+      row.pathnameExtension,
+      categoryById,
+    );
+    const category = categories.find((c) => c.slug.toLowerCase() === slug) ?? null;
+    return {
+      ...row,
+      extensionCategory: category
+        ? {
+            id: category.id,
+            slug: category.slug,
+            displayName: category.displayName,
+          }
+        : null,
+    };
+  });
 
   return NextResponse.json({
     scan: {

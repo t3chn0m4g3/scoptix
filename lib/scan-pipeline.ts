@@ -19,6 +19,11 @@ import {
   type VtDomainReportV2,
 } from "@/engines/virustotal";
 import { pathnameExtensionFromUrl } from "@/lib/categorization";
+import {
+  categoryIdForPathnameExtension,
+  loadExtensionSuffixRules,
+  type SuffixRule,
+} from "@/lib/extension-category";
 import { deepFetchText } from "@/lib/deep-fetch";
 import { extractHostIfUnderTarget } from "@/lib/extract-hosts";
 import { acquireVtKey, recordBackoff } from "@/lib/rotator";
@@ -34,8 +39,6 @@ type ScanConfig = {
   inputHostname?: string;
 };
 
-type SuffixRule = { suffix: string; extensionCategoryId: number };
-
 type UrlInput = { url: string; date: Date | null };
 
 /* ── Helpers (unchanged business logic) ── */
@@ -45,18 +48,6 @@ async function getGlobalProxy(prisma: PrismaClient): Promise<string | null> {
   if (!row?.value) return null;
   const v = row.value as { url?: string | null };
   return v.url ?? null;
-}
-
-async function loadSuffixRules(prisma: PrismaClient): Promise<SuffixRule[]> {
-  return prisma.extensionSuffixRule.findMany({
-    select: { suffix: true, extensionCategoryId: true },
-  });
-}
-
-function categoryForSuffix(rules: SuffixRule[], ext: string | null): number | null {
-  if (!ext) return null;
-  const hit = rules.find((r) => r.suffix === ext.toLowerCase());
-  return hit?.extensionCategoryId ?? null;
 }
 
 function sha256Hex(s: string) {
@@ -362,7 +353,7 @@ async function processAndWriteUrls(
     const hostnameNormalized = host.toLowerCase();
 
     const ext = pathnameExtensionFromUrl(url);
-    const categoryId = categoryForSuffix(suffixRules, ext);
+    const categoryId = categoryIdForPathnameExtension(suffixRules, ext);
     const urlSha = sha256Hex(url);
     const subId = subMap.get(hostnameNormalized) ?? null;
 
@@ -574,7 +565,7 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
   const globalProxy = await getGlobalProxy(prisma);
   const target = job.targetDomain;
   const targetNorm = target.domainNormalized;
-  const suffixRules = await loadSuffixRules(prisma);
+  const suffixRules = await loadExtensionSuffixRules(prisma);
   const isSubdomainScan = cfg.inputType === "subdomain";
 
   /* ── B3: Pre-load extension categories (1 query instead of N) ── */

@@ -1,4 +1,8 @@
 import { prisma } from "@/lib/prisma";
+import {
+  categorySlugForPathnameExtension,
+  loadExtensionSuffixRules,
+} from "@/lib/extension-category";
 import { rowsToCsv } from "@/lib/csv";
 import {
   getObservedAvailability,
@@ -130,6 +134,11 @@ async function fetchAllSubdomains(scanId: string) {
 async function fetchAllUrls(scanId: string) {
   const rows: string[][] = [];
   let skip = 0;
+  const [suffixRules, categories] = await Promise.all([
+    loadExtensionSuffixRules(prisma),
+    prisma.extensionCategory.findMany({ select: { id: true, slug: true } }),
+  ]);
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
 
   while (true) {
     const batch = await prisma.scanObservedUrl.findMany({
@@ -137,12 +146,11 @@ async function fetchAllUrls(scanId: string) {
       take: BATCH_SIZE,
       skip,
       orderBy: { createdAt: "desc" },
-      include: {
-        extensionCategory: {
-          select: {
-            slug: true,
-          },
-        },
+      select: {
+        urlText: true,
+        hostnameNormalized: true,
+        pathnameExtension: true,
+        createdAt: true,
       },
     });
     if (batch.length === 0) break;
@@ -151,7 +159,11 @@ async function fetchAllUrls(scanId: string) {
       rows.push([
         url.urlText,
         url.hostnameNormalized,
-        url.extensionCategory?.slug ?? "uncategorized",
+        categorySlugForPathnameExtension(
+          suffixRules,
+          url.pathnameExtension,
+          categoryById,
+        ),
         url.pathnameExtension ?? "",
         formatIso(url.createdAt),
       ]);

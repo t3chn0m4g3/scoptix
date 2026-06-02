@@ -69,7 +69,7 @@ export function DashboardInsightsRow({ data }: { data: DashboardInsightsData }) 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
       <section className="scx-summary-card flex min-h-[300px] flex-col">
-        <h2 className={`mb-2.5 ${cardTitleClass}`}>Targets With Most Findings</h2>
+        <h2 className={`mb-2.5 ${cardTitleClass}`}>Targets with Most Findings</h2>
         {data.topTargetsByFindings.length === 0 ? (
           <p className="py-6 text-center text-[12px] text-muted">No targets yet.</p>
         ) : (
