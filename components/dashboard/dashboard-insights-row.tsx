@@ -18,7 +18,8 @@ import {
 } from "@/components/ui-icons";
 import type { DashboardInsightsData } from "@/lib/dashboard-insights";
 
-const cardTitleClass = "text-sm font-bold text-cream";
+const cardEyebrowClass =
+  "text-[10px] font-semibold uppercase tracking-[0.2em] text-accent";
 const footerLinkClass =
   "inline-flex items-center text-[12px] font-medium text-accent hover:text-accent-dim";
 
@@ -69,7 +70,7 @@ export function DashboardInsightsRow({ data }: { data: DashboardInsightsData }) 
   return (
     <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
       <section className="scx-summary-card flex min-h-[300px] flex-col">
-        <h2 className={`mb-2.5 ${cardTitleClass}`}>Targets with Most Findings</h2>
+        <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Targets with Most Findings</h2>
         {data.topTargetsByFindings.length === 0 ? (
           <p className="py-6 text-center text-[12px] text-muted">No targets yet.</p>
         ) : (
@@ -97,7 +98,7 @@ export function DashboardInsightsRow({ data }: { data: DashboardInsightsData }) 
       </section>
 
       <section className="scx-summary-card flex min-h-[300px] flex-col">
-        <h2 className={`mb-4 ${cardTitleClass}`}>Last Scan Summary</h2>
+        <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Last Scan Summary</h2>
         {!scan ? (
           <p className="text-[12px] leading-relaxed text-muted">
             No scans have been run yet. Start a scan to see results here.
@@ -163,7 +164,7 @@ export function DashboardInsightsRow({ data }: { data: DashboardInsightsData }) 
       </section>
 
       <section className="scx-summary-card flex min-h-[300px] flex-col">
-        <h2 className={`mb-2 ${cardTitleClass}`}>Findings by Type</h2>
+        <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Findings by Type</h2>
         {data.findingsTotal === 0 ? (
           <p className="text-[12px] text-muted">No findings discovered yet.</p>
         ) : (

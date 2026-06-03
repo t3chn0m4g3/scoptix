@@ -15,7 +15,8 @@ import type { ScanSummaryData, SummaryChangeLine } from "@/lib/scan-summary";
 const summaryFooterLinkClass =
   "inline-flex items-center text-[12px] font-medium text-accent hover:text-accent-dim";
 
-const summaryCardTitleClass = "text-sm font-bold text-cream";
+const cardEyebrowClass =
+  "text-[10px] font-semibold uppercase tracking-[0.2em] text-accent";
 
 /** Fixed-width column for Changes / Sources; other columns grow with viewport. */
 const summaryFixedColGridClass =
@@ -62,7 +63,7 @@ export function ScanSummaryTab({
     <div className="space-y-4">
       <div className={summaryFixedColGridClass}>
         <section className="scx-summary-card flex h-full flex-col">
-          <h2 className={`mb-2.5 ${summaryCardTitleClass}`}>Findings by Type (Top 10)</h2>
+          <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Findings by Type (Top 10)</h2>
           <SummaryRankTableHeader labelCol="Type" countLabel="Count" />
           <div className="flex-1 space-y-0.5">
             {data.findingsTop10.length === 0 ? (
@@ -80,7 +81,7 @@ export function ScanSummaryTab({
         </section>
 
         <section className="scx-summary-card flex h-full flex-col">
-          <h2 className={`mb-2.5 ${summaryCardTitleClass}`}>URL Categories (Top 10)</h2>
+          <h2 className={`mb-2.5 ${cardEyebrowClass}`}>URL Categories (Top 10)</h2>
           <SummaryRankTableHeader labelCol="Category" countLabel="URLs" />
           <div className="flex-1 space-y-0.5">
             {data.urlCategoriesTop10.length === 0 ? (
@@ -102,7 +103,7 @@ export function ScanSummaryTab({
         </section>
 
         <section className="scx-summary-card flex h-full flex-col">
-          <h2 className={`mb-2.5 ${summaryCardTitleClass}`}>Changes Since Previous Scan</h2>
+          <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Changes Since Previous Scan</h2>
           {!data.changes.baselineScanId ? (
             <p className="text-[12px] leading-relaxed text-muted">
               No earlier completed scan for this target yet. Run another scan later to see
@@ -143,39 +144,33 @@ export function ScanSummaryTab({
           <DiscoveryOverTimeChart points={data.discoveryTimeline} />
         </section>
 
-        <section className="scx-summary-card min-w-0 overflow-hidden">
-          <div className="mb-2.5 flex min-w-0 items-center justify-between gap-2">
-            <h2 className={`min-w-0 truncate ${summaryCardTitleClass}`}>Last 5 Findings</h2>
-            <Link
-              href={`${basePath}?tab=findings`}
-              className={`${summaryFooterLinkClass} shrink-0`}
-            >
-              View all
-              <IconArrowRight className="ml-1 size-3.5" />
-            </Link>
-          </div>
-          <div className="min-w-0 space-y-2 overflow-hidden">
+        <section className="scx-summary-card flex h-full min-w-0 flex-col overflow-hidden">
+          <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Last 5 Findings</h2>
+          <div className="min-w-0 flex-1 space-y-1.5 overflow-hidden pb-3">
             {data.latestFindings.length === 0 ? (
-              <p className="py-3 text-center text-[12px] text-muted">No findings in this scan yet.</p>
+              <p className="py-4 text-center text-[12px] text-muted">No findings in this scan yet.</p>
             ) : (
               data.latestFindings.map((item) => (
-                <div key={item.id} className="scx-summary-inner-item min-w-0 overflow-hidden">
-                  <div className="flex min-w-0 items-start gap-3">
+                <div
+                  key={item.id}
+                  className="scx-summary-inner-item min-w-0 overflow-hidden !p-2.5"
+                >
+                  <div className="flex min-w-0 items-start gap-2">
                     <span
-                      className="scx-finding-type-badge max-w-[38%] self-center truncate"
+                      className="scx-finding-type-badge max-w-[38%] shrink-0 self-center truncate px-1.5 py-px text-[9px]"
                       title={item.findingType}
                     >
                       {item.findingType}
                     </span>
                     <div className="min-w-0 flex-1 overflow-hidden">
                       <div
-                        className="truncate text-[12px] font-medium text-cream"
+                        className="truncate text-[11px] font-medium leading-snug text-cream"
                         title={item.url}
                       >
                         {item.url}
                       </div>
                       <div
-                        className="mt-0.5 truncate text-[11px] text-muted"
+                        className="mt-px truncate text-[10px] leading-snug text-muted"
                         title={item.description}
                       >
                         {item.description}
@@ -186,10 +181,16 @@ export function ScanSummaryTab({
               ))
             )}
           </div>
+          <div className="scx-summary-card-footer mt-1 pt-3.5">
+            <Link href={`${basePath}?tab=findings`} className={summaryFooterLinkClass}>
+              View all findings
+              <IconArrowRight className="ml-1 size-3.5" />
+            </Link>
+          </div>
         </section>
 
         <section className="scx-summary-card flex min-h-[220px] flex-col">
-          <h2 className={`mb-6 ${summaryCardTitleClass}`}>Sources</h2>
+          <h2 className={`mb-2.5 ${cardEyebrowClass}`}>Sources</h2>
           {data.sources.length === 0 ? (
             <p className="text-[12px] text-muted">Source breakdown unavailable for this snapshot.</p>
           ) : (

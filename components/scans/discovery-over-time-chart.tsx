@@ -8,10 +8,10 @@ const URL_COLOR = "var(--color-accent)";
 const FINDING_COLOR = "var(--chart-finding, #a78bfa)";
 
 /* ── layout constants ─────────────────────────────────────────── */
-const W = 440;
-const H = 240;
-const PAD = { top: 28, right: 52, bottom: 38, left: 52 };
-const PLOT_X_INSET = 20;
+const W = 460;
+const H = 272;
+const PAD = { top: 26, right: 48, bottom: 40, left: 48 };
+const PLOT_X_INSET = 16;
 
 /* ── helpers ───────────────────────────────────────────────────── */
 function niceYMax(maxVal: number) {
@@ -294,7 +294,9 @@ export function DiscoveryOverTimeChart({
       {/* Header */}
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="text-sm font-bold text-cream">Target History</h2>
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-accent">
+            Target History
+          </h2>
           <p className="mt-0.5 text-[11px] text-muted">
             {points.length <= 1
               ? "URLs & findings on this target"
@@ -327,7 +329,7 @@ export function DiscoveryOverTimeChart({
             preserveAspectRatio="xMidYMid meet"
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
-            style={{ minHeight: 200 }}
+            style={{ minHeight: 228 }}
           >
             <defs>
               {/* URL gradient fill */}

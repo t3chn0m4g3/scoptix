@@ -1,4 +1,5 @@
 import { ScanJobStatus, type PrismaClient } from "@prisma/client";
+import { resolveScanObservedCounts } from "@/lib/scan-observed-counts";
 import { resolveFindingRankVisual } from "@/lib/summary-rank-style";
 import type { SummarySourceSlice } from "@/lib/scan-summary";
 
@@ -82,38 +83,6 @@ function formatScannedAt(completedAt: Date | null, createdAt: Date) {
   });
 }
 
-async function resolveScanCounts(
-  prisma: PrismaClient,
-  scan: {
-    id: string;
-    observedFindingCount: number | null;
-    observedSubdomainCount: number | null;
-    observedUrlCount: number | null;
-  },
-) {
-  const observedSubdomainModel = (
-    prisma as PrismaClient & {
-      scanObservedSubdomain: { count: (args: { where: { scanJobId: string } }) => Promise<number> };
-      scanObservedUrl: { count: (args: { where: { scanJobId: string } }) => Promise<number> };
-    }
-  ).scanObservedSubdomain;
-  const observedUrlModel = (
-    prisma as PrismaClient & {
-      scanObservedUrl: { count: (args: { where: { scanJobId: string } }) => Promise<number> };
-    }
-  ).scanObservedUrl;
-
-  const [findings, subdomains, urls] = await Promise.all([
-    scan.observedFindingCount ??
-      prisma.analysisFinding.count({ where: { scanJobId: scan.id } }),
-    scan.observedSubdomainCount ??
-      observedSubdomainModel.count({ where: { scanJobId: scan.id } }),
-    scan.observedUrlCount ?? observedUrlModel.count({ where: { scanJobId: scan.id } }),
-  ]);
-
-  return { findings, subdomains, urls };
-}
-
 function buildDonutSlices(
   rows: DashboardFindingTypeRow[],
   total: number,
@@ -188,7 +157,7 @@ export async function loadDashboardInsights(prisma: PrismaClient): Promise<Dashb
   let lastScan: DashboardLastScanSummary | null = null;
 
   if (scan) {
-    const counts = await resolveScanCounts(prisma, scan);
+    const counts = await resolveScanObservedCounts(prisma, scan);
     const isCompleted = scan.status === ScanJobStatus.COMPLETED;
     lastScan = {
       scanId: scan.id,

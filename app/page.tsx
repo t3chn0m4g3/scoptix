@@ -10,8 +10,10 @@ import {
 import { DashboardGreeting } from "@/components/dashboard-greeting";
 import { DashboardPeriodMenu } from "@/components/dashboard-period-menu";
 import { DashboardInsightsRow } from "@/components/dashboard/dashboard-insights-row";
+import { DashboardRecentScansRow } from "@/components/dashboard/dashboard-recent-scans-row";
 import { DashboardStatCards } from "@/components/dashboard-stat-cards";
 import { loadDashboardInsights } from "@/lib/dashboard-insights";
+import { loadDashboardRecentScanVolumes } from "@/lib/dashboard-recent-scan-volumes";
 import { TopBar } from "@/components/top-bar";
 import {
   dashboardChartRangeParams,
@@ -61,7 +63,7 @@ export default async function DashboardPage({
     rangeParams.findingsRange,
   );
 
-  const [recentScans, charts, overview, insights] = await Promise.all([
+  const [recentScans, charts, overview, insights, recentScanVolumes] = await Promise.all([
     prisma.scanJob.findMany({
       orderBy: { createdAt: "desc" },
       take: 10,
@@ -70,6 +72,7 @@ export default async function DashboardPage({
     loadDashboardCharts(prisma, { scanRangeKey: scanRange, findingsRangeKey: findingsRange }),
     loadDashboardOverview(prisma, periodKey),
     loadDashboardInsights(prisma),
+    loadDashboardRecentScanVolumes(prisma),
   ]);
 
   return (
@@ -87,6 +90,8 @@ export default async function DashboardPage({
           <DashboardStatCards stats={overview.stats} periodLabel={overview.period.label} />
 
           <DashboardInsightsRow data={insights} />
+
+          <DashboardRecentScansRow recentScanVolumes={recentScanVolumes} />
 
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
             <div className="xl:col-span-2">
@@ -110,32 +115,7 @@ export default async function DashboardPage({
             <DashboardApiKeyUsageChart rows={charts.apiKeyUsage} perKeyDailyCap={charts.perKeyDailyCap} />
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <div className="glass-panel rounded-2xl p-5 xl:col-span-1">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-accent">Quick actions</div>
-              <div className="mt-4 space-y-3">
-                <Link
-                  href="/scans"
-                  className="shadow-clay block rounded-xl bg-gradient-to-r from-accent to-accent-dim px-4 py-3 text-center text-[13px] font-semibold text-void"
-                >
-                  New Scan
-                </Link>
-                <Link
-                  href="/findings"
-                  className="block rounded-xl border border-line px-4 py-3 text-center text-[13px] text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream"
-                >
-                  View Findings
-                </Link>
-                <Link
-                  href="/settings?tab=network"
-                  className="block rounded-xl border border-line px-4 py-3 text-center text-[13px] text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream"
-                >
-                  Configure API Keys
-                </Link>
-              </div>
-            </div>
-
-            <div className="glass-panel overflow-hidden rounded-2xl shadow-glass xl:col-span-2">
+          <div className="glass-panel overflow-hidden rounded-2xl shadow-glass">
               <div className="border-b border-line bg-[var(--table-header-bg)] px-5 py-4">
                 <div className="text-[13px] font-semibold text-cream">Recent scans</div>
                 <div className="mt-1 text-[12px] text-muted">
@@ -189,7 +169,6 @@ export default async function DashboardPage({
                   })
                 )}
               </div>
-            </div>
           </div>
         </div>
       </main>
