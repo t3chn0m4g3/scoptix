@@ -7,6 +7,22 @@ export function formatIpTableDateTime(value: Date | string | null | undefined) {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 }
 
+/** Panel / mockup style: `10 May 2026, 11:39 AM` (UTC). */
+export function formatPassiveDnsPanelDateTime(value: Date | string | null | undefined) {
+  if (!value) return "—";
+  const d = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "UTC",
+  });
+}
+
 /** VirusTotal passive DNS style: `16 Jun 2024, 10:50:21` (UTC). */
 export function formatVtPassiveDnsDateTime(value: Date | string | null | undefined) {
   if (!value) return "—";
