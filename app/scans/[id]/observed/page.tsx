@@ -47,9 +47,14 @@ import {
   type IpCompareItem,
 } from "@/lib/scan-compare-diff";
 import {
-  formatEnginesLabel,
+  formatFindingEnginesLabel,
   parseScanEnginesEnabled,
 } from "@/lib/scan-engines";
+import {
+  countDedupedScanFindings,
+  findDedupedScanFindingIds,
+  groupDedupedScanFindingsByType,
+} from "@/lib/target-findings-dedup";
 import {
   formatScanDateTime,
   formatScanDuration,
@@ -57,6 +62,7 @@ import {
 } from "@/lib/scan-format";
 import {
   getObservedAvailability,
+  partialObservedPhaseLabel,
   getObservedScanSummary,
 } from "@/lib/scan-observed";
 import { syncScanObservedCounts } from "@/lib/scan-observed-counts";
@@ -198,7 +204,7 @@ export default async function ScanObservedPage({
       ? await syncScanObservedCounts(prisma, id, { fixProgress: true })
       : await (async () => {
           const [findings, subdomains, urls, ips] = await Promise.all([
-            prisma.analysisFinding.count({ where: { scanJobId: id } }),
+            countDedupedScanFindings(prisma, id),
             availability.subdomains === "ready"
               ? observedSubdomainModel.count({ where: { scanJobId: id } })
               : Promise.resolve(0),
@@ -348,33 +354,34 @@ export default async function ScanObservedPage({
     fixedParams.cat = effectiveCategorySlug;
   }
 
-  const findingsWhere = {
-    scanJobId: id,
+  const findingDedupFilter = {
     ...(fType ? { findingType: fType } : {}),
     ...(fSource ? { source: fSource } : {}),
-  } as const;
+  };
   const findingsTotal =
     tab === "findings"
-      ? await prisma.analysisFinding.count({ where: findingsWhere })
+      ? await countDedupedScanFindings(prisma, id, findingDedupFilter)
       : 0;
   const findingsPages = Math.max(1, Math.ceil(findingsTotal / perPage));
   const safeFindingsPage = Math.min(page, findingsPages);
-  const findingGroups =
+  const findingGroupsRaw =
+    tab === "findings" ? await groupDedupedScanFindingsByType(prisma, id) : [];
+  const findingGroups = findingGroupsRaw.map((g) => ({
+    findingType: g.findingType,
+    _count: { _all: g.count },
+  }));
+  const dedupedFindingIds =
     tab === "findings"
-      ? await prisma.analysisFinding.groupBy({
-          by: ["findingType"],
-          where: { scanJobId: id },
-          _count: { _all: true },
-          orderBy: { _count: { findingType: "desc" } },
-        })
-      : [];
-  const findings =
-    tab === "findings"
-      ? await prisma.analysisFinding.findMany({
-          where: findingsWhere,
-          orderBy: { createdAt: "desc" },
+      ? await findDedupedScanFindingIds(prisma, id, {
           skip: (safeFindingsPage - 1) * perPage,
           take: perPage,
+          filter: findingDedupFilter,
+        })
+      : [];
+  const findingsRows =
+    dedupedFindingIds.length > 0
+      ? await prisma.analysisFinding.findMany({
+          where: { id: { in: dedupedFindingIds } },
           include: {
             discoveredUrl: {
               select: {
@@ -386,6 +393,11 @@ export default async function ScanObservedPage({
             },
           },
         })
+      : [];
+  const findingsById = new Map(findingsRows.map((f) => [f.id, f]));
+  const findings =
+    tab === "findings"
+      ? dedupedFindingIds.map((fid) => findingsById.get(fid)).filter((f) => f !== undefined)
       : [];
 
   const subdomainsSearchFilter = tab === "subdomains" ? subdomainHostnameSearchWhere(q) : undefined;
@@ -723,7 +735,9 @@ export default async function ScanObservedPage({
               Partial observed results
             </div>
             <div className="mt-2 text-sm text-amber-900">
-              This scan is {scan.status.toLowerCase()}, so observed results may be incomplete.
+              {partialObservedPhaseLabel(scan.phase) ??
+                `This scan is ${scan.status.toLowerCase()}, so observed results may be incomplete.`}{" "}
+              Counts refresh as new URLs and findings are written. Wayback URLs will appear when that phase runs.
             </div>
           </div>
         )}
@@ -882,8 +896,8 @@ export default async function ScanObservedPage({
                           </div>
                         </div>
                         <div className="col-span-1 text-[10px] text-muted">
-                          {formatEnginesLabel(
-                            undefined,
+                          {formatFindingEnginesLabel(
+                            finding.engines,
                             finding.discoveredUrl.engines,
                             scanEnginesEnabled,
                           ) || "—"}

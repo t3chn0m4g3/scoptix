@@ -1,5 +1,8 @@
 import type { Prisma } from "@prisma/client";
+import { ScanJobStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+
+const VT_SCAN_PHASES = new Set(["T1_APEX", "T2_SUBDOMAINS"]);
 
 export type ObservedAvailabilityState = "ready" | "legacy_unavailable";
 
@@ -49,6 +52,36 @@ export async function getObservedScanSummary(scanId: string) {
       },
     },
   });
+}
+
+/** True when observed snapshot has data worth opening before the full scan completes. */
+export function canViewPartialObservedResults(scan: {
+  status: string;
+  phase?: string | null;
+  observedUrlCount?: number | null;
+  observedFindingCount?: number | null;
+}): boolean {
+  const hasObservedData =
+    (scan.observedUrlCount ?? 0) > 0 || (scan.observedFindingCount ?? 0) > 0;
+
+  if (scan.status === ScanJobStatus.COMPLETED) return true;
+
+  if (scan.status === ScanJobStatus.CANCELLED) return hasObservedData;
+
+  if (scan.status !== ScanJobStatus.RUNNING) return false;
+
+  if (hasObservedData) return true;
+
+  return Boolean(scan.phase && !VT_SCAN_PHASES.has(scan.phase));
+}
+
+export function partialObservedPhaseLabel(phase: string | null | undefined): string | null {
+  if (!phase) return null;
+  if (phase === "T3_WAYBACK_APEX" || phase === "T4_WAYBACK_SUBDOMAINS") {
+    return "VirusTotal finished · Wayback Machine in progress";
+  }
+  if (phase === "T6_ANALYSIS") return "Analyzing collected URLs";
+  return null;
 }
 
 export function getObservedAvailability(

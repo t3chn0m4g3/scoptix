@@ -1,4 +1,4 @@
-import { formatEngineLabel, parseScanEnginesEnabled, enginesObservedInScan } from "@/lib/scan-engines";
+import { formatEngineLabel, formatFindingEnginesLabel, parseScanEnginesEnabled } from "@/lib/scan-engines";
 import { prisma } from "@/lib/prisma";
 import {
   categorySlugForPathnameExtension,
@@ -60,9 +60,11 @@ async function fetchAllFindings(scanId: string, enabledEngines: ReturnType<typeo
       rows.push([
         finding.findingType,
         finding.source,
-        enginesObservedInScan(undefined, finding.discoveredUrl.engines, enabledEngines)
-          .map((e) => formatEngineLabel(e))
-          .join("; "),
+        formatFindingEnginesLabel(
+          finding.engines,
+          finding.discoveredUrl.engines,
+          enabledEngines,
+        ).replace(/, /g, "; "),
         finding.discoveredUrl.urlText,
         finding.snippet ?? "",
         formatIso(finding.createdAt),

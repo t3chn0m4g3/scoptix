@@ -51,3 +51,17 @@ export function formatEnginesLabel(
     .map((e) => formatEngineLabel(e))
     .join(", ");
 }
+
+/** Engines that attributed this finding; falls back to URL engines for legacy rows. */
+export function formatFindingEnginesLabel(
+  findingEngines: EngineProvider[] | null | undefined,
+  discoveredEngines: EngineProvider[] | null | undefined,
+  enabledEngines: EngineProvider[],
+): string {
+  const enabled = new Set(enabledEngines);
+  const fromFinding = (findingEngines ?? []).filter((e) => enabled.has(e));
+  if (fromFinding.length > 0) {
+    return fromFinding.map((e) => formatEngineLabel(e)).join(", ");
+  }
+  return formatEnginesLabel(undefined, discoveredEngines, enabledEngines);
+}

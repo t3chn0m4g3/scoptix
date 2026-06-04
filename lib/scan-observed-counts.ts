@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { countDedupedScanFindings } from "@/lib/target-findings-dedup";
 
 export type ScanObservedCountSource = {
   id: string;
@@ -30,7 +31,7 @@ export async function countScanObservedFromDb(
 ): Promise<ScanObservedCounts> {
   const models = observedModels(prisma);
   const [findings, subdomains, urls, ips] = await Promise.all([
-    prisma.analysisFinding.count({ where: { scanJobId } }),
+    countDedupedScanFindings(prisma, scanJobId),
     models.scanObservedSubdomain.count({ where: { scanJobId } }),
     models.scanObservedUrl.count({ where: { scanJobId } }),
     models.scanObservedIpResolution.count({ where: { scanJobId } }),

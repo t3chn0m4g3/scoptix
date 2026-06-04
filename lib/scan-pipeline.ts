@@ -28,6 +28,8 @@ import {
 import { deepFetchText } from "@/lib/deep-fetch";
 import { extractHostIfUnderTarget } from "@/lib/extract-hosts";
 import { syncScanObservedCounts } from "@/lib/scan-observed-counts";
+import { loadScanFindingIndex, recordScanFinding, type ScanFindingIndex } from "@/lib/scan-finding-record";
+import { syncTargetCachedFindingCount } from "@/lib/target-findings-dedup";
 import { acquireVtKey, recordBackoff } from "@/lib/rotator";
 import { runSensitiveRegexScan } from "@/lib/regex-analysis";
 
@@ -337,8 +339,9 @@ async function processAndWriteUrls(
   globalProxy: string | null,
   urls: UrlInput[],
   engine: EngineProvider,
-  /** URLs already regex/deep-scanned in this scan job (VT then Wayback dedupe only). */
-  analyzedUrlHashesThisScan: Set<string>,
+  scanFindingIndex: ScanFindingIndex,
+  /** URLs that already completed deep fetch in this scan (Wayback still runs URL-string merge). */
+  deepAnalyzedUrlHashesThisScan: Set<string>,
 ): Promise<void> {
   const merged = mergeUrlInputsForBatch(urls, targetNorm);
   if (merged.length === 0) return;
@@ -429,15 +432,6 @@ async function processAndWriteUrls(
     urlIdMap,
   );
 
-  const urlStringFindings: {
-    discoveredUrlId: string;
-    targetDomainId: string;
-    scanJobId: string;
-    source: FindingSource;
-    findingType: string;
-    snippet: string;
-  }[] = [];
-
   let a = 0;
   for (const row of preparedRows) {
     a += 1;
@@ -452,24 +446,34 @@ async function processAndWriteUrls(
     const du = urlIdMap.get(row.urlSha256);
     if (!du) continue;
 
-    if (analyzedUrlHashesThisScan.has(row.urlSha256)) continue;
+    const findingBase = {
+      discoveredUrlId: du.id,
+      targetDomainId,
+      scanJobId,
+      engine,
+    };
 
     for (const hit of runSensitiveRegexScan(row.urlText)) {
-      urlStringFindings.push({
-        discoveredUrlId: du.id,
-        targetDomainId,
-        scanJobId,
+      await recordScanFinding(prisma, scanFindingIndex, {
+        ...findingBase,
         source: FindingSource.URL_STRING,
         findingType: hit.type,
         snippet: hit.snippet,
       });
     }
 
-    if (!deepEnabled) continue;
+    const deepAlreadyDone = deepAnalyzedUrlHashesThisScan.has(row.urlSha256);
+    if (!deepEnabled || deepAlreadyDone) {
+      deepAnalyzedUrlHashesThisScan.add(row.urlSha256);
+      continue;
+    }
 
     const cat = du.extensionCategoryId ? (categoryMap.get(du.extensionCategoryId) ?? null) : null;
     const slug = cat?.slug?.toLowerCase() ?? "other";
-    if (deepSlugs.size > 0 && !deepSlugs.has(slug)) continue;
+    if (deepSlugs.size > 0 && !deepSlugs.has(slug)) {
+      deepAnalyzedUrlHashesThisScan.add(row.urlSha256);
+      continue;
+    }
 
     await checkCancelled(prisma, scanJobId);
 
@@ -482,10 +486,8 @@ async function processAndWriteUrls(
       const { text } = await deepFetchText({ url: row.urlText, proxyUrl: globalProxy });
 
       for (const hit of runSensitiveRegexScan(text)) {
-        urlStringFindings.push({
-          discoveredUrlId: du.id,
-          targetDomainId,
-          scanJobId,
+        await recordScanFinding(prisma, scanFindingIndex, {
+          ...findingBase,
           source: FindingSource.RESPONSE_BODY,
           findingType: hit.type,
           snippet: hit.snippet,
@@ -506,28 +508,11 @@ async function processAndWriteUrls(
       });
     }
 
-    analyzedUrlHashesThisScan.add(row.urlSha256);
+    deepAnalyzedUrlHashesThisScan.add(row.urlSha256);
   }
 
-  if (urlStringFindings.length > 0) {
-    const FINDING_BATCH = 1000;
-    for (let i = 0; i < urlStringFindings.length; i += FINDING_BATCH) {
-      const batch = urlStringFindings.slice(i, i + FINDING_BATCH);
-      await prisma.$transaction(async (tx) => {
-        const result = await tx.analysisFinding.createMany({ data: batch });
-        if (result.count > 0) {
-          await tx.scanJob.update({
-            where: { id: scanJobId },
-            data: { observedFindingCount: { increment: result.count } },
-          });
-        }
-      });
-    }
-  }
-
-  const [urlCount, findingCount, subCount] = await Promise.all([
+  const [urlCount, subCount] = await Promise.all([
     prisma.discoveredUrl.count({ where: { targetDomainId } }),
-    prisma.analysisFinding.count({ where: { targetDomainId } }),
     prisma.subdomain.count({ where: { targetDomainId } }),
   ]);
 
@@ -535,7 +520,6 @@ async function processAndWriteUrls(
     where: { id: targetDomainId },
     data: {
       cachedUrlCount: urlCount,
-      cachedFindingCount: findingCount,
       cachedSubdomainCount: subCount,
     },
   });
@@ -559,7 +543,8 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
   const targetNorm = target.domainNormalized;
   const suffixRules = await loadExtensionSuffixRules(prisma);
   const isSubdomainScan = cfg.inputType === "subdomain";
-  const analyzedUrlHashesThisScan = new Set<string>();
+  const scanFindingIndex = await loadScanFindingIndex(prisma, scanJobId);
+  const deepAnalyzedUrlHashesThisScan = new Set<string>();
 
   /* ── B3: Pre-load extension categories (1 query instead of N) ── */
   const allCategories = await prisma.extensionCategory.findMany();
@@ -718,8 +703,13 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
       globalProxy,
       vtUrlList,
       EngineProvider.VIRUSTOTAL,
-      analyzedUrlHashesThisScan,
+      scanFindingIndex,
+      deepAnalyzedUrlHashesThisScan,
     );
+
+    if (engines.includes(EngineProvider.WAYBACK_MACHINE)) {
+      await syncScanObservedCounts(prisma, scanJobId);
+    }
   }
 
   /* ════════════════════════════════════════════
@@ -749,7 +739,8 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
       globalProxy,
       apexInputs,
       EngineProvider.WAYBACK_MACHINE,
-      analyzedUrlHashesThisScan,
+      scanFindingIndex,
+      deepAnalyzedUrlHashesThisScan,
     );
 
     if (!isSubdomainScan && vtEnabled && vtSubdomains.length > 0) {
@@ -784,7 +775,8 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
           globalProxy,
           subInputs,
           EngineProvider.WAYBACK_MACHINE,
-          analyzedUrlHashesThisScan,
+          scanFindingIndex,
+          deepAnalyzedUrlHashesThisScan,
         );
 
         if (shouldUpdateProgress(wIdx, vtSubdomains.length, 2)) {
@@ -801,6 +793,7 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
 
   const finalCheck = await prisma.scanJob.findUnique({ where: { id: scanJobId }, select: { status: true } });
   if (finalCheck?.status !== ScanJobStatus.CANCELLED) {
+    await syncTargetCachedFindingCount(prisma, target.id);
     const observed = await syncScanObservedCounts(prisma, scanJobId);
     const progressTotal = Math.max(1, observed.urls);
     await prisma.scanJob.update({

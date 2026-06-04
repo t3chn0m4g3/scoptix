@@ -2,6 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import {
+  canViewPartialObservedResults,
+  partialObservedPhaseLabel,
+} from "@/lib/scan-observed";
 
 type ScanData = {
   id: string;
@@ -10,6 +14,8 @@ type ScanData = {
   progressCurrent: number | null;
   progressTotal: number | null;
   errorMessage: string | null;
+  observedUrlCount?: number | null;
+  observedFindingCount?: number | null;
   targetDomainId: string;
   targetDomain?: { domainNormalized: string };
   createdAt: string;
@@ -87,11 +93,16 @@ export function ScanDetailClient({ id }: { id: string }) {
       : 0;
 
   const phaseLabels: Record<string, string> = {
-    T1_APEX: "Phase 1 — Scanning root domain",
-    T2_SUBDOMAINS: "Phase 2 — Scanning subdomains",
-    T3_CONSOLIDATE: "Phase 3 — Consolidating URLs",
-    T4_ANALYSIS: "Phase 4 — Analyzing for secrets",
+    T1_APEX: "Phase 1 — VirusTotal (root domain)",
+    T2_SUBDOMAINS: "Phase 2 — VirusTotal (subdomains)",
+    T3_WAYBACK_APEX: "Phase 3 — Wayback Machine (root)",
+    T4_WAYBACK_SUBDOMAINS: "Phase 4 — Wayback Machine (subdomains)",
+    T5_CONSOLIDATE: "Phase 5 — Consolidating",
+    T6_ANALYSIS: "Phase 6 — Analyzing URLs",
   };
+
+  const canViewObserved = canViewPartialObservedResults(scan);
+  const partialPhaseHint = partialObservedPhaseLabel(scan.phase);
 
   return (
     <div className="space-y-6">
@@ -129,14 +140,17 @@ export function ScanDetailClient({ id }: { id: string }) {
             </button>
           )}
 
+          {canViewObserved && (
+            <Link
+              href={`/scans/${scan.id}/observed`}
+              className="shadow-clay inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent-dim px-5 py-3 text-[13px] font-semibold text-void transition-transform hover:scale-[1.02]"
+            >
+              {isCompleted ? "View Snapshot" : "View results so far"}
+            </Link>
+          )}
+
           {isCompleted && (
             <>
-              <Link
-                href={`/scans/${scan.id}/observed`}
-                className="shadow-clay inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-accent to-accent-dim px-5 py-3 text-[13px] font-semibold text-void transition-transform hover:scale-[1.02]"
-              >
-                View Snapshot
-              </Link>
               <Link
                 href={`/scans/${scan.id}/compare`}
                 className="rounded-xl border border-line px-4 py-3 text-[13px] text-muted transition-colors hover:bg-[var(--nav-hover-bg)] hover:text-cream"
@@ -156,16 +170,27 @@ export function ScanDetailClient({ id }: { id: string }) {
 
       {/* ── Progress Bar ── */}
       {isRunning && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-muted">
-            <span>{(scan.progressCurrent ?? 0).toLocaleString()} / {(scan.progressTotal ?? 0).toLocaleString()}</span>
-            <span className="font-mono">{pct}%</span>
-          </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-line/30">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-accent-dim to-accent transition-all duration-500"
-              style={{ width: `${pct}%` }}
-            />
+        <div className="space-y-3">
+          {canViewObserved && !isCompleted && (
+            <div className="rounded-xl border border-accent/25 bg-accent/5 px-4 py-3 text-[13px] text-cream">
+              {partialPhaseHint ?? "Early results are available."}{" "}
+              <Link href={`/scans/${scan.id}/observed`} className="font-semibold text-accent underline-offset-2 hover:underline">
+                Open observed snapshot
+              </Link>{" "}
+              to review VirusTotal findings while Wayback continues.
+            </div>
+          )}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-muted">
+              <span>{(scan.progressCurrent ?? 0).toLocaleString()} / {(scan.progressTotal ?? 0).toLocaleString()}</span>
+              <span className="font-mono">{pct}%</span>
+            </div>
+            <div className="h-2.5 overflow-hidden rounded-full bg-line/30">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-accent-dim to-accent transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
           </div>
         </div>
       )}

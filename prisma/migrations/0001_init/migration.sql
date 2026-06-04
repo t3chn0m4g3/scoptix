@@ -116,6 +116,7 @@ CREATE TABLE "analysis_finding" (
     "source" "FindingSource" NOT NULL,
     "finding_type" TEXT NOT NULL,
     "snippet" TEXT,
+    "engines" "EngineProvider"[] NOT NULL DEFAULT ARRAY[]::"EngineProvider"[],
     "metadata" JSONB,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 

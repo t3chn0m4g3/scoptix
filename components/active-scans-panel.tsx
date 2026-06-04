@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { canViewPartialObservedResults } from "@/lib/scan-observed";
 
 const DEFAULT_VISIBLE_SCANS = 3;
 
@@ -16,6 +17,8 @@ type ActiveScanItem = {
   phase: string | null;
   progressCurrent: number | null;
   progressTotal: number | null;
+  observedUrlCount?: number | null;
+  observedFindingCount?: number | null;
   createdAt: string;
   targetDomain: {
     domainNormalized: string;
@@ -79,13 +82,16 @@ export function ActiveScansPanel({ scans }: { scans: ActiveScanItem[] }) {
       <div className="divide-y divide-line">
         {visibleScans.map((scan) => {
           const statusCls = STATUS_STYLE[scan.status] ?? "bg-muted/10 text-muted";
+          const observedHref = canViewPartialObservedResults(scan)
+            ? `/scans/${scan.id}/observed`
+            : `/scans/${scan.id}`;
 
           return (
-            <Link
+            <div
               key={scan.id}
-              href={`/scans/${scan.id}`}
-              className="block px-5 py-4 transition-colors hover:bg-white/[0.03]"
+              className="px-5 py-4 transition-colors hover:bg-white/[0.03]"
             >
+              <Link href={observedHref} className="block">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate font-mono text-[12px] text-cream">
@@ -103,7 +109,7 @@ export function ActiveScansPanel({ scans }: { scans: ActiveScanItem[] }) {
                     {scan.status}
                   </span>
                   <span className="hidden text-[12px] font-medium text-accent sm:inline">
-                    Open
+                    {canViewPartialObservedResults(scan) ? "View results" : "Open"}
                   </span>
                 </div>
               </div>
@@ -116,7 +122,16 @@ export function ActiveScansPanel({ scans }: { scans: ActiveScanItem[] }) {
                   {formatProgress(scan)}
                 </span>
               </div>
-            </Link>
+              </Link>
+              {scan.status === "RUNNING" && canViewPartialObservedResults(scan) && (
+                <Link
+                  href={`/scans/${scan.id}`}
+                  className="mt-2 inline-block text-[11px] text-muted underline-offset-2 hover:text-cream hover:underline"
+                >
+                  Job progress
+                </Link>
+              )}
+            </div>
           );
         })}
       </div>

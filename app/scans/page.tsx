@@ -101,6 +101,8 @@ export default async function ScansPage() {
                 phase: scan.phase,
                 progressCurrent: scan.progressCurrent,
                 progressTotal: scan.progressTotal,
+                observedUrlCount: scan.observedUrlCount,
+                observedFindingCount: scan.observedFindingCount,
                 createdAt: scan.createdAt.toISOString(),
                 targetDomain: {
                   domainNormalized: scan.targetDomain.domainNormalized,

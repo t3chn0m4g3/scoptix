@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { ScanJobStatus } from "@prisma/client";
 import { getScanQueue } from "@/lib/queue";
+import { syncTargetCachedFindingCount } from "@/lib/target-findings-dedup";
 
 export class ScanDeleteError extends Error {
   readonly status: number;
@@ -43,9 +44,9 @@ async function refreshTargetCachedCounts(
   targetDomainIds: string[],
 ) {
   for (const targetDomainId of targetDomainIds) {
-    const [urlCount, findingCount, subCount] = await Promise.all([
+    const [urlCount, , subCount] = await Promise.all([
       prisma.discoveredUrl.count({ where: { targetDomainId } }),
-      prisma.analysisFinding.count({ where: { targetDomainId } }),
+      syncTargetCachedFindingCount(prisma, targetDomainId),
       prisma.subdomain.count({ where: { targetDomainId } }),
     ]);
 
@@ -53,7 +54,6 @@ async function refreshTargetCachedCounts(
       where: { id: targetDomainId },
       data: {
         cachedUrlCount: urlCount,
-        cachedFindingCount: findingCount,
         cachedSubdomainCount: subCount,
       },
     });

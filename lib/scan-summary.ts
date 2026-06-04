@@ -19,6 +19,10 @@ import {
 } from "@/lib/extension-category";
 import { getObservedAvailability } from "@/lib/scan-observed";
 import {
+  findDedupedTargetFindingIds,
+  groupDedupedTargetFindingsByType,
+} from "@/lib/target-findings-dedup";
+import {
   resolveCategoryRankVisual,
   resolveFindingRankVisual,
   type RankVisual,
@@ -432,25 +436,12 @@ async function loadTargetUrlSources(targetDomainId: string) {
 
 /** Global target summary — same shape as scan summary, aggregated across all scans. */
 export async function loadTargetSummary(targetDomainId: string): Promise<ScanSummaryData> {
-  const [findingGroups, urlCategoryCounts, categories, latestFindingRows, latestScan] =
+  const [findingGroupsRaw, urlCategoryCounts, categories, latestScan] =
     await Promise.all([
-      prisma.analysisFinding.groupBy({
-        by: ["findingType"],
-        where: { targetDomainId },
-        _count: { _all: true },
-        orderBy: { _count: { findingType: "desc" } },
-      }),
+      groupDedupedTargetFindingsByType(prisma, targetDomainId),
       countDiscoveredUrlsByCategory(prisma, targetDomainId),
       prisma.extensionCategory.findMany({
         select: { id: true, slug: true, displayName: true },
-      }),
-      prisma.analysisFinding.findMany({
-        where: { targetDomainId },
-        orderBy: { createdAt: "desc" },
-        take: 5,
-        include: {
-          discoveredUrl: { select: { urlText: true } },
-        },
       }),
       prisma.scanJob.findFirst({
         where: { targetDomainId, status: ScanJobStatus.COMPLETED },
@@ -479,12 +470,28 @@ export async function loadTargetSummary(targetDomainId: string): Promise<ScanSum
 
   const emptyPrevious = new Map<string, number>();
 
-  const findingsItems = findingGroups.slice(0, 10).map((g) => ({
+  const latestDedupedIds = await findDedupedTargetFindingIds(prisma, targetDomainId, {
+    skip: 0,
+    take: 5,
+  });
+  const latestFindingRows =
+    latestDedupedIds.length > 0
+      ? await prisma.analysisFinding.findMany({
+          where: { id: { in: latestDedupedIds } },
+          include: { discoveredUrl: { select: { urlText: true } } },
+        })
+      : [];
+  const latestById = new Map(latestFindingRows.map((f) => [f.id, f]));
+  const orderedLatestRows = latestDedupedIds
+    .map((id) => latestById.get(id))
+    .filter((f) => f !== undefined);
+
+  const findingsItems = findingGroupsRaw.slice(0, 10).map((g) => ({
     label: g.findingType,
-    count: g._count._all,
+    count: g.count,
   }));
   const findingsTop10 = buildRankRows(findingsItems, emptyPrevious, resolveFindingRankVisual);
-  const findingsTypeTotal = findingGroups.length;
+  const findingsTypeTotal = findingGroupsRaw.length;
 
   const urlCategoryItems = buildUrlCategoryRankItems(urlCategoryCounts, categories);
   const urlCategoriesTop10 = buildRankRows(
@@ -505,7 +512,7 @@ export async function loadTargetSummary(targetDomainId: string): Promise<ScanSum
     changes = await buildChangesSincePreviousScan(previousScan, latestScan.id, availability);
   }
 
-  const latestFindings = latestFindingRows.map((f) => ({
+  const latestFindings = orderedLatestRows.map((f) => ({
     id: f.id,
     findingType: f.findingType,
     url: f.discoveredUrl.urlText,

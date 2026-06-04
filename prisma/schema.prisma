@@ -177,6 +177,7 @@ model AnalysisFinding {
   source          FindingSource
   findingType     String        @map("finding_type")
   snippet         String?
+  engines         EngineProvider[] @default([])
   metadata        Json?
   createdAt       DateTime      @default(now()) @map("created_at")
 

@@ -36,7 +36,17 @@ import {
   IconServer,
 } from "@/components/ui-icons";
 import { formatScanDateTime, formatScanDuration } from "@/lib/scan-format";
+import { canViewPartialObservedResults } from "@/lib/scan-observed";
 import { parseIpTableSort, targetIpOrderBy } from "@/lib/ip-table-sort";
+import {
+  countDedupedTargetFindings,
+  findDedupedTargetFindingIds,
+  groupDedupedTargetFindingsByType,
+  syncTargetCachedFindingCount,
+} from "@/lib/target-findings-dedup";
+import type { FindingSource } from "@prisma/client";
+import { formatFindingEnginesLabel } from "@/lib/scan-engines";
+import { parseActiveEnginesFromSetting } from "@/lib/active-engines";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +101,16 @@ export default async function TargetDetailPage({
     where: { id },
   });
   if (!target) notFound();
+
+  const dedupedFindingCount = await countDedupedTargetFindings(prisma, target.id);
+  if (target.cachedFindingCount !== dedupedFindingCount) {
+    await syncTargetCachedFindingCount(prisma, target.id);
+  }
+
+  const activeEnginesSetting = await prisma.appSetting.findUnique({
+    where: { key: "active_engines" },
+  });
+  const enabledEngines = parseActiveEnginesFromSetting(activeEnginesSetting?.value);
 
   /* C1: Lazy-load — only run queries needed for the active tab */
 
@@ -189,37 +209,47 @@ export default async function TargetDetailPage({
         })
       : [];
 
-  /* Finding queries — use direct targetDomainId (denormalized, no sub-query) */
-  const findingWhere = {
-    targetDomainId: target.id,
+  const findingDedupFilter = {
     ...(fType ? { findingType: fType } : {}),
-    ...(fSource ? { source: fSource as "URL_STRING" | "RESPONSE_BODY" } : {}),
-  } as const;
+    ...(fSource ? { source: fSource as FindingSource } : {}),
+  };
 
-  const totalFindings = tab === "findings" ? await prisma.analysisFinding.count({ where: findingWhere }) : 0;
+  const totalFindings =
+    tab === "findings"
+      ? await countDedupedTargetFindings(prisma, target.id, findingDedupFilter)
+      : 0;
   const totalFindingsPages = Math.max(1, Math.ceil(totalFindings / perPage));
   const safeFindingPage = Math.min(fPage, totalFindingsPages);
 
-  /* Finding groups — only needed for "findings" tab */
-  const findingGroups =
+  const findingGroupsRaw =
+    tab === "findings" ? await groupDedupedTargetFindingsByType(prisma, target.id) : [];
+  const findingGroups = findingGroupsRaw.map((g) => ({
+    findingType: g.findingType,
+    _count: { _all: g.count },
+  }));
+
+  const dedupedFindingIds =
     tab === "findings"
-      ? await prisma.analysisFinding.groupBy({
-          by: ["findingType"],
-          where: { targetDomainId: target.id },
-          _count: { _all: true },
-          orderBy: { _count: { findingType: "desc" } },
+      ? await findDedupedTargetFindingIds(prisma, target.id, {
+          skip: (safeFindingPage - 1) * perPage,
+          take: perPage,
+          filter: findingDedupFilter,
         })
       : [];
 
+  const findingsRows =
+    dedupedFindingIds.length > 0
+      ? await prisma.analysisFinding.findMany({
+          where: { id: { in: dedupedFindingIds } },
+          include: {
+            discoveredUrl: { select: { urlText: true, id: true, externalSeenAt: true, engines: true } },
+          },
+        })
+      : [];
+  const findingsById = new Map(findingsRows.map((f) => [f.id, f]));
   const findings =
     tab === "findings"
-      ? await prisma.analysisFinding.findMany({
-          where: findingWhere,
-          orderBy: { createdAt: "desc" },
-          skip: (safeFindingPage - 1) * perPage,
-          take: perPage,
-          include: { discoveredUrl: { select: { urlText: true, id: true, externalSeenAt: true, engines: true } } },
-        })
+      ? dedupedFindingIds.map((id) => findingsById.get(id)).filter((f) => f !== undefined)
       : [];
 
   const subdomains =
@@ -304,7 +334,7 @@ export default async function TargetDetailPage({
       label: "Findings",
       icon: IconAlertTriangle,
       href: tabHref("findings"),
-      count: targetTabCount(target.cachedFindingCount),
+      count: targetTabCount(dedupedFindingCount),
     },
     {
       key: "scans",
@@ -379,7 +409,7 @@ export default async function TargetDetailPage({
       icon: IconAlertTriangle,
       iconBg: "scx-metric-icon-badge--success",
       iconColor: "",
-      value: countLabel(target.cachedFindingCount),
+      value: countLabel(dedupedFindingCount),
       label: "Findings",
     },
     {
@@ -572,7 +602,7 @@ export default async function TargetDetailPage({
               <div className="border-b border-line px-5 py-4 space-y-3">
                 <ScanPanelHeading
                   title="Global findings directory"
-                  description="All findings discovered for this target across every scan."
+                  description="Unique findings for this target (exact URL, type, source, and snippet). Repeats across scans are counted once."
                 />
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
@@ -584,7 +614,7 @@ export default async function TargetDetailPage({
                         : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
                     ].join(" ")}
                   >
-                    All ({target.cachedFindingCount.toLocaleString()})
+                    All ({dedupedFindingCount.toLocaleString()})
                   </Link>
                   {findingGroups.map((g) => (
                     <Link
@@ -651,11 +681,11 @@ export default async function TargetDetailPage({
                           </div>
                         </div>
                         <div className="col-span-1 text-[10px] text-muted">
-                          {f.discoveredUrl.engines.map((e) =>
-                            e === "VIRUSTOTAL" ? "VirusTotal" :
-                            e === "WAYBACK_MACHINE" ? "Wayback" :
-                            e === "URLSCAN" ? "URLScan" : e
-                          ).join(", ")}
+                          {formatFindingEnginesLabel(
+                            f.engines,
+                            f.discoveredUrl.engines,
+                            enabledEngines,
+                          ) || "—"}
                         </div>
                         <div className="col-span-6 min-w-0">
                           <div className="break-all font-mono text-[11px] text-cream/90" title={f.discoveredUrl.urlText}>{f.discoveredUrl.urlText}</div>
@@ -728,10 +758,9 @@ export default async function TargetDetailPage({
                   <div className="px-5 py-8 text-center text-[13px] text-muted">No scans yet.</div>
                 ) : (
                   scanJobs.map((s) => {
-                    const href =
-                      s.status === "COMPLETED"
-                        ? `/scans/${s.id}/observed`
-                        : `/scans/${s.id}`;
+                    const href = canViewPartialObservedResults(s)
+                      ? `/scans/${s.id}/observed`
+                      : `/scans/${s.id}`;
 
                     return (
                       <Link
