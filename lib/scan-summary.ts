@@ -335,6 +335,15 @@ async function buildChangesSincePreviousScan(
     });
   }
 
+  if (ipsDiff.comparable && ipsDiff.summary.added > 0) {
+    pushLine({
+      label: "New IPs",
+      value: `+${ipsDiff.summary.added.toLocaleString()}`,
+      tone: "positive",
+      icon: "server",
+    });
+  }
+
   const dividerBeforeRemoved = changes.lines.length > 0;
 
   if (subdomainsDiff.comparable) {
@@ -363,27 +372,14 @@ async function buildChangesSincePreviousScan(
     });
   }
 
-  if (ipsDiff.comparable) {
-    const added = ipsDiff.summary.added;
-    const removed = ipsDiff.summary.removed;
-    if (added > 0) {
-      pushLine({
-        label: "New IPs",
-        value: `+${added.toLocaleString()}`,
-        tone: "positive",
-        icon: "server",
-        dividerBefore: false,
-      });
-    }
-    if (removed > 0) {
-      pushLine({
-        label: "Removed IPs",
-        value: `-${removed.toLocaleString()}`,
-        tone: "negative",
-        icon: "server",
-        dividerBefore: false,
-      });
-    }
+  if (ipsDiff.comparable && ipsDiff.summary.removed > 0) {
+    pushLine({
+      label: "Removed IPs",
+      value: `-${ipsDiff.summary.removed.toLocaleString()}`,
+      tone: "negative",
+      icon: "server",
+      dividerBefore: dividerBeforeRemoved && !subdomainsDiff.comparable && !urlsDiff.comparable,
+    });
   }
 
   if (findingsDiff.comparable) {
