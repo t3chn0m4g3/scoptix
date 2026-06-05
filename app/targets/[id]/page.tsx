@@ -26,6 +26,14 @@ import { ScanMetricCards } from "@/components/scans/scan-metric-cards";
 import { ScanSummaryTab } from "@/components/scans/scan-summary-tab";
 import { loadTargetSummary } from "@/lib/scan-summary";
 import { TargetIpsTab } from "@/components/targets/target-ips-tab";
+import { TargetSubdomainRow } from "@/components/targets/target-subdomain-row";
+import { SubdomainTableHeader } from "@/components/subdomains/subdomain-table-header";
+import { SubdomainSearchBar } from "@/components/subdomain-search-bar";
+import { subdomainHostnameSearchWhere } from "@/lib/subdomain-search-query";
+import {
+  parseSubdomainTableSort,
+  sortSubdomainRows,
+} from "@/lib/subdomain-table-sort";
 import {
   IconAlertTriangle,
   IconClock,
@@ -110,6 +118,7 @@ export default async function TargetDetailPage({
   const fType = sp(rawSp.fType) || undefined;
   const fSource = sp(rawSp.fSource) || undefined;
   const fPage = asPosInt(sp(rawSp.fPage) || null, 1);
+  const subAll = sp(rawSp.subAll) === "1";
 
   /* C2: Use cached counts — no expensive _count or cross-table count() */
   const target = await prisma.targetDomain.findUnique({
@@ -267,16 +276,118 @@ export default async function TargetDetailPage({
       ? dedupedFindingIds.map((id) => findingsById.get(id)).filter((f) => f !== undefined)
       : [];
 
-  const subdomains =
+  const subSort = parseSubdomainTableSort(sp(rawSp.subSort), sp(rawSp.subDir));
+
+  const subdomainsSearchFilter = tab === "subdomains" ? subdomainHostnameSearchWhere(q) : undefined;
+
+  const totalSubdomains =
+    tab === "subdomains"
+      ? await prisma.subdomain.count({
+          where: {
+            targetDomainId: target.id,
+            ...(subdomainsSearchFilter ?? {}),
+          },
+        })
+      : 0;
+
+  const subdomainsWithUrls =
+    tab === "subdomains"
+      ? await prisma.subdomain.count({
+          where: {
+            targetDomainId: target.id,
+            observedUrls: { some: {} },
+            ...(subdomainsSearchFilter ?? {}),
+          },
+        })
+      : 0;
+
+  const subdomainsTotal = subAll ? totalSubdomains : subdomainsWithUrls;
+  const subdomainsPages = Math.max(1, Math.ceil(subdomainsTotal / perPage));
+  const safeSubdomainsPage = Math.min(page, subdomainsPages);
+
+  const rawSubdomains =
     tab === "subdomains"
       ? await prisma.subdomain.findMany({
-          where: { targetDomainId: target.id },
-          orderBy: { hostnameNormalized: "asc" },
-          take: 5000,
+          where: {
+            targetDomainId: target.id,
+            ...(subAll ? {} : { observedUrls: { some: {} } }),
+            ...(subdomainsSearchFilter ?? {}),
+          },
+          select: {
+            id: true,
+            hostnameNormalized: true,
+            firstSeenAt: true,
+            lastSeenAt: true,
+            observedUrls: subAll ? { take: 1, select: { id: true } } : undefined,
+          },
         })
       : [];
 
+  const ipCountsByHostnameRaw =
+    tab === "subdomains" && rawSubdomains.length > 0
+      ? await prisma.ipResolutionSighting.groupBy({
+          by: ["hostnameNormalized"],
+          where: {
+            ipResolution: { targetDomainId: target.id },
+            hostnameNormalized: { in: rawSubdomains.map((s) => s.hostnameNormalized) },
+          },
+          _count: { ipResolutionId: true },
+        })
+      : [];
+  const ipCountsByHostname = new Map(
+    ipCountsByHostnameRaw.map((g) => [g.hostnameNormalized, g._count.ipResolutionId]),
+  );
+
+  const latestSightingsRaw =
+    tab === "subdomains" && rawSubdomains.length > 0
+      ? await prisma.ipResolutionSighting.findMany({
+          where: {
+            ipResolution: { targetDomainId: target.id },
+            hostnameNormalized: { in: rawSubdomains.map((s) => s.hostnameNormalized) },
+          },
+          orderBy: { lastResolvedAt: "desc" },
+          distinct: ["hostnameNormalized"],
+          select: {
+            hostnameNormalized: true,
+            lastResolvedAt: true,
+            ipResolution: { select: { ipAddress: true } },
+          },
+        })
+      : [];
+  const latestSightingsByHostname = new Map(
+    latestSightingsRaw.map((s) => [s.hostnameNormalized, s]),
+  );
+
   const ipSort = parseIpTableSort(sp(rawSp.ipSort), sp(rawSp.ipDir), "target");
+
+  const sortedSubdomains = (() => {
+    if (tab !== "subdomains") return [];
+    const withStats = rawSubdomains.map((s) => {
+      const latest = latestSightingsByHostname.get(s.hostnameNormalized);
+      return {
+        id: s.id,
+        hostnameNormalized: s.hostnameNormalized,
+        hasUrlBadge: subAll ? (
+          s.observedUrls && s.observedUrls.length > 0 ? (
+            <span className="shrink-0 rounded bg-accent/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent">
+              Has URL
+            </span>
+          ) : (
+            <span className="shrink-0 rounded bg-line/50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted">
+              No URL
+            </span>
+          )
+        ) : undefined,
+        ipCount: ipCountsByHostname.get(s.hostnameNormalized) || 0,
+        latestIp: latest?.ipResolution.ipAddress ?? null,
+        lastResolvedAt: latest?.lastResolvedAt ?? null,
+      };
+    });
+    return sortSubdomainRows(withStats, subSort).slice(
+      (safeSubdomainsPage - 1) * perPage,
+      safeSubdomainsPage * perPage,
+    );
+  })();
 
   const ipsTotal =
     tab === "ips" ? await prisma.ipResolution.count({ where: { targetDomainId: target.id } }) : 0;
@@ -408,6 +519,14 @@ export default async function TargetDetailPage({
     if (pg !== "1") p.set("fPage", pg);
     p.set("perPage", String(perPage));
     return `/targets/${targetId}?${p.toString()}`;
+  }
+
+  function subdomainModeHref(nextAll: boolean) {
+    const q = new URLSearchParams();
+    q.set("tab", "subdomains");
+    q.set("perPage", String(perPage));
+    if (nextAll) q.set("subAll", "1");
+    return `${targetBasePath}?${q.toString()}`;
   }
 
   const targetMetricCards = [
@@ -591,96 +710,145 @@ export default async function TargetDetailPage({
           {tab === "subdomains" && (
             <div className="glass-panel overflow-hidden rounded-2xl">
               <div className="border-b border-line bg-[var(--table-header-bg)] px-5 py-4">
-                <ScanPanelHeading
-                  title="Global subdomain directory"
-                  description="All subdomains discovered for this target across every scan."
-                />
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <ScanPanelHeading
+                      title={subAll ? "All target subdomains" : "Subdomains with URLs"}
+                      description={
+                        subAll
+                          ? "Complete subdomain inventory for this target across every scan."
+                          : "Only subdomains that have at least one observed URL globally."
+                      }
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <span className="text-[11px] text-muted mr-2">
+                      Showing {subdomainsWithUrls.toLocaleString()} per {totalSubdomains.toLocaleString()} total
+                    </span>
+                    <Link
+                      href={subdomainModeHref(!subAll)}
+                      className={[
+                        "shrink-0 rounded-lg border px-3 py-1.5 text-[11px] transition-colors",
+                        !subAll
+                          ? "border-accent/60 bg-accent/10 text-cream"
+                          : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
+                      ].join(" ")}
+                    >
+                      {subAll ? "Only with URLs" : "Show all subdomains"}
+                    </Link>
+                    <SubdomainSearchBar
+                      basePath={targetBasePath}
+                      perPage={perPage}
+                      subAll={subAll}
+                      initialQuery={q}
+                      size="sm"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="hidden border-b border-line bg-[var(--table-header-bg)] px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted sm:grid sm:grid-cols-12 sm:gap-3">
-                <div className="col-span-7">Hostname</div>
-                <div className="col-span-3">First seen</div>
-                <div className="col-span-2 text-right">Last seen</div>
-              </div>
+              <SubdomainTableHeader
+                sort={subSort}
+                basePath={`/targets/${target.id}`}
+                fixedParams={{
+                  tab: "subdomains",
+                  ...(subAll ? { subAll: "1" } : {}),
+                  ...(q?.trim() ? { q: q.trim() } : {}),
+                }}
+              />
               <div className="divide-y divide-line">
-                {subdomains.length === 0 ? (
+                {!subAll && sortedSubdomains.length === 0 ? (
+                  <div className="px-5 py-8 text-center text-[13px] text-muted">No subdomains with URLs yet.</div>
+                ) : subAll && sortedSubdomains.length === 0 ? (
                   <div className="px-5 py-8 text-center text-[13px] text-muted">No subdomains yet.</div>
                 ) : (
-                  subdomains.map((s) => (
-                    <div key={s.id} className="flex flex-col gap-1 px-5 py-3 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3">
-                      <div className="col-span-7 truncate font-mono text-[12px] text-cream">{s.hostnameNormalized}</div>
-                      <div className="col-span-3 font-mono text-[11px] text-muted">
-                        {formatScanDateTime(s.firstSeenAt)}
-                      </div>
-                      <div className="col-span-2 text-right font-mono text-[11px] text-muted">
-                        {formatScanDateTime(s.lastSeenAt)}
-                      </div>
-                    </div>
+                  sortedSubdomains.map((s) => (
+                    <TargetSubdomainRow 
+                      key={s.id} 
+                      row={s} 
+                      targetDomainId={target.id} 
+                    />
                   ))
                 )}
               </div>
+              <TablePagination
+                currentPage={safeSubdomainsPage}
+                totalPages={subdomainsPages}
+                totalItems={subdomainsTotal}
+                perPage={perPage}
+                basePath={targetBasePath}
+                fixedParams={{
+                  tab: "subdomains",
+                  ...(subAll ? { subAll: "1" } : {}),
+                  ...(q?.trim() ? { q: q.trim() } : {}),
+                  subSort: subSort.field,
+                  subDir: subSort.dir,
+                }}
+              />
             </div>
           )}
 
           {/* ════════ Findings Tab ════════ */}
           {tab === "findings" && (
-            <div className="glass-panel overflow-hidden rounded-2xl">
-              <div className="border-b border-line px-5 py-4 space-y-3">
-                <ScanPanelHeading
-                  title="Global findings directory"
-                  description="Unique findings for this target (exact URL, type, source, and snippet). Repeats across scans are counted once."
-                />
-                <div className="flex flex-wrap items-center gap-2">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={findingFilterHref({ type: undefined })}
+                  className={[
+                    "rounded-lg border px-3 py-1.5 text-[12px] transition-colors",
+                    !fType
+                      ? "border-accent/60 bg-accent/10 text-cream"
+                      : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
+                  ].join(" ")}
+                >
+                  All ({dedupedFindingCount.toLocaleString()})
+                </Link>
+                {findingGroups.map((g) => (
                   <Link
-                    href={findingFilterHref({ type: undefined })}
+                    key={g.findingType}
+                    href={findingFilterHref({ type: g.findingType })}
                     className={[
                       "rounded-lg border px-3 py-1.5 text-[12px] transition-colors",
-                      !fType
+                      fType === g.findingType
                         ? "border-accent/60 bg-accent/10 text-cream"
                         : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
                     ].join(" ")}
                   >
-                    All ({dedupedFindingCount.toLocaleString()})
+                    {g.findingType} ({g._count._all.toLocaleString()})
                   </Link>
-                  {findingGroups.map((g) => (
-                    <Link
-                      key={g.findingType}
-                      href={findingFilterHref({ type: g.findingType })}
-                      className={[
-                        "rounded-lg border px-3 py-1.5 text-[12px] transition-colors",
-                        fType === g.findingType
-                          ? "border-accent/60 bg-accent/10 text-cream"
-                          : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
-                      ].join(" ")}
-                    >
-                      {g.findingType} ({g._count._all.toLocaleString()})
-                    </Link>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
-                    Source:
-                  </span>
-                  {[
-                    { label: "All", value: undefined },
-                    { label: "URL String", value: "URL_STRING" },
-                    { label: "Response Body", value: "RESPONSE_BODY" },
-                  ].map((opt) => (
-                    <Link
-                      key={opt.label}
-                      href={findingFilterHref({ source: opt.value })}
-                      className={[
-                        "rounded-lg border px-3 py-1.5 text-[11px] transition-colors",
-                        fSource === opt.value || (!fSource && !opt.value)
-                          ? "border-accent/40 bg-accent/8 text-cream"
-                          : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
-                      ].join(" ")}
-                    >
-                      {opt.label}
-                    </Link>
-                  ))}
-                </div>
+                ))}
               </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+                  Source:
+                </span>
+                {[
+                  { label: "All", value: undefined },
+                  { label: "URL String", value: "URL_STRING" },
+                  { label: "Response Body", value: "RESPONSE_BODY" },
+                ].map((opt) => (
+                  <Link
+                    key={opt.label}
+                    href={findingFilterHref({ source: opt.value })}
+                    className={[
+                      "rounded-lg border px-3 py-1.5 text-[11px] transition-colors",
+                      fSource === opt.value || (!fSource && !opt.value)
+                        ? "border-accent/40 bg-accent/8 text-cream"
+                        : "border-line text-muted hover:bg-[var(--nav-hover-bg)] hover:text-cream",
+                    ].join(" ")}
+                  >
+                    {opt.label}
+                  </Link>
+                ))}
+              </div>
+
+              <div className="glass-panel overflow-hidden rounded-2xl">
+                <div className="border-b border-line px-5 py-4">
+                  <ScanPanelHeading
+                    title="Global findings directory"
+                    description="Unique findings for this target (exact URL, type, source, and snippet). Repeats across scans are counted once."
+                  />
+                </div>
 
               <div className="hidden border-b border-line bg-[var(--table-header-bg)] px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted lg:grid lg:grid-cols-12 lg:gap-3">
                   <div className="col-span-1">Type</div>
@@ -748,6 +916,7 @@ export default async function TargetDetailPage({
                 fixedParams={findingFixedParams}
                 pageParam="fPage"
               />
+            </div>
             </div>
           )}
 

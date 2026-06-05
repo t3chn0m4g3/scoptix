@@ -19,6 +19,7 @@ import { ScanMetricCards } from "@/components/scans/scan-metric-cards";
 import { ScanSummaryTab } from "@/components/scans/scan-summary-tab";
 import { ScanIpsTab } from "@/components/scans/scan-ips-tab";
 import { SubdomainSearchBar } from "@/components/subdomain-search-bar";
+import { ObservedSubdomainRow } from "@/components/scans/observed-subdomain-row";
 import { UrlFiltersToolbar } from "@/components/url-filters-toolbar";
 import { subdomainHostnameSearchWhere } from "@/lib/subdomain-search-query";
 import { urlExcludeWhere, normalizeExcludeKeywords } from "@/lib/url-exclude-query";
@@ -34,6 +35,11 @@ import {
   TablePagination,
   normalizePageSize,
 } from "@/components/table-pagination";
+import {
+  parseSubdomainTableSort,
+  sortSubdomainRows,
+} from "@/lib/subdomain-table-sort";
+import { SubdomainTableHeader } from "@/components/subdomains/subdomain-table-header";
 import {
   compareDiffChangeCount,
   loadFindingsCompareDiff,
@@ -155,6 +161,8 @@ export default async function ScanObservedPage({
       : fSourceRaw === FindingSource.RESPONSE_BODY
         ? FindingSource.RESPONSE_BODY
         : undefined;
+
+  const subSort = parseSubdomainTableSort(sp(rawSp.subSort), sp(rawSp.subDir));
 
   const scan = await getObservedScanSummary(id);
   if (!scan) notFound();
@@ -412,13 +420,10 @@ export default async function ScanObservedPage({
       : 0;
   const subdomainsPages = Math.max(1, Math.ceil(subdomainsTotal / perPage));
   const safeSubdomainsPage = Math.min(page, subdomainsPages);
-  const subdomains =
+  const rawSubdomains =
     tab === "subdomains" && availability.subdomains === "ready" && !subAll
       ? await observedSubdomainModel.findMany({
           where: subdomainsWhere,
-          orderBy: { hostnameNormalized: "asc" },
-          skip: (safeSubdomainsPage - 1) * perPage,
-          take: perPage,
           include: {
             subdomain: {
               select: {
@@ -431,16 +436,13 @@ export default async function ScanObservedPage({
         })
       : [];
 
-  const allSubdomains =
+  const rawAllSubdomains =
     tab === "subdomains" && availability.subdomains === "ready" && subAll
       ? await prisma.subdomain.findMany({
           where: {
             targetDomainId: scan.targetDomainId,
             ...(subdomainsSearchFilter ?? {}),
           },
-          orderBy: { hostnameNormalized: "asc" },
-          skip: (safeSubdomainsPage - 1) * perPage,
-          take: perPage,
           select: {
             id: true,
             hostnameNormalized: true,
@@ -454,6 +456,83 @@ export default async function ScanObservedPage({
           },
         })
       : [];
+
+  const ipCountsByHostnameRaw =
+    tab === "subdomains" && availability.subdomains === "ready"
+      ? await prisma.ipResolutionSighting.groupBy({
+          by: ["hostnameNormalized"],
+          where: {
+            scanJobId: id,
+            hostnameNormalized: {
+              in: subAll
+                ? rawAllSubdomains.map((s) => s.hostnameNormalized)
+                : rawSubdomains.map((s) => s.hostnameNormalized),
+            },
+          },
+          _count: { ipResolutionId: true },
+        })
+      : [];
+  const ipCountsByHostname = new Map(
+    ipCountsByHostnameRaw.map((g) => [g.hostnameNormalized, g._count.ipResolutionId]),
+  );
+
+  const latestSightingsRaw =
+    tab === "subdomains" && availability.subdomains === "ready"
+      ? await prisma.ipResolutionSighting.findMany({
+          where: {
+            scanJobId: id,
+            hostnameNormalized: {
+              in: subAll
+                ? rawAllSubdomains.map((s) => s.hostnameNormalized)
+                : rawSubdomains.map((s) => s.hostnameNormalized),
+            },
+          },
+          orderBy: { lastResolvedAt: "desc" },
+          distinct: ["hostnameNormalized"],
+          select: {
+            hostnameNormalized: true,
+            lastResolvedAt: true,
+            ipResolution: { select: { ipAddress: true } },
+          },
+        })
+      : [];
+  const latestSightingsByHostname = new Map(
+    latestSightingsRaw.map((s) => [s.hostnameNormalized, s]),
+  );
+
+  const subdomains = (() => {
+    if (tab !== "subdomains" || availability.subdomains !== "ready" || subAll) return [];
+    const withStats = rawSubdomains.map((subdomain) => {
+      const latest = latestSightingsByHostname.get(subdomain.hostnameNormalized);
+      return {
+        ...subdomain,
+        ipCount: ipCountsByHostname.get(subdomain.hostnameNormalized) || 0,
+        latestIp: latest?.ipResolution.ipAddress ?? null,
+        lastResolvedAt: latest?.lastResolvedAt ?? null,
+      };
+    });
+    return sortSubdomainRows(withStats, subSort).slice(
+      (safeSubdomainsPage - 1) * perPage,
+      safeSubdomainsPage * perPage,
+    );
+  })();
+
+  const allSubdomains = (() => {
+    if (tab !== "subdomains" || availability.subdomains !== "ready" || !subAll) return [];
+    const withStats = rawAllSubdomains.map((subdomain) => {
+      const latest = latestSightingsByHostname.get(subdomain.hostnameNormalized);
+      return {
+        ...subdomain,
+        ipCount: ipCountsByHostname.get(subdomain.hostnameNormalized) || 0,
+        latestIp: latest?.ipResolution.ipAddress ?? null,
+        lastResolvedAt: latest?.lastResolvedAt ?? null,
+      };
+    });
+    return sortSubdomainRows(withStats, subSort).slice(
+      (safeSubdomainsPage - 1) * perPage,
+      safeSubdomainsPage * perPage,
+    );
+  })();
 
   if (tab === "findings" && fType) fixedParams.fType = fType;
   if (tab === "findings" && fSource) fixedParams.fSource = fSource;
@@ -989,11 +1068,12 @@ export default async function ScanObservedPage({
                 </div>
               ) : (
                 <>
-                  <div className="hidden border-b border-line bg-[var(--table-header-bg)] px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted sm:grid sm:grid-cols-12 sm:gap-3">
-                    <div className="col-span-6">Hostname</div>
-                    <div className="col-span-3">First seen canonically</div>
-                    <div className="col-span-3 text-right">Last seen canonically</div>
-                  </div>
+                  <SubdomainTableHeader
+                    sort={subSort}
+                    basePath={basePath}
+                    fixedParams={{ ...fixedParams, ...(subAll ? { subAll: "1" } : {}) }}
+                    observedScanView
+                  />
 
                   <div className="divide-y divide-line">
                     {!subAll && subdomains.length === 0 ? (
@@ -1005,54 +1085,51 @@ export default async function ScanObservedPage({
                         No subdomains yet for this target.
                       </div>
                     ) : !subAll ? (
-                      subdomains.map((subdomain) => (
-                        <div
-                          key={subdomain.id}
-                          className="flex flex-col gap-1 px-5 py-3 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3"
-                        >
-                          <div className="col-span-6 truncate font-mono text-[12px] text-cream">
-                            {subdomain.hostnameNormalized}
-                          </div>
-                          <div className="col-span-3 font-mono text-[11px] text-muted">
-                            {formatScanDateTime(subdomain.subdomain?.firstSeenAt)}
-                          </div>
-                          <div className="col-span-3 text-left font-mono text-[11px] text-muted sm:text-right">
-                            {formatScanDateTime(subdomain.subdomain?.lastSeenAt)}
-                          </div>
-                        </div>
-                      ))
+                      subdomains.map((subdomain) => {
+                        const latest = latestSightingsByHostname.get(subdomain.hostnameNormalized);
+                        return (
+                          <ObservedSubdomainRow
+                            key={subdomain.id}
+                            scanJobId={id}
+                            targetDomainId={scan.targetDomainId}
+                            row={{
+                              hostnameNormalized: subdomain.hostnameNormalized,
+                              ipCount: ipCountsByHostname.get(subdomain.hostnameNormalized) || 0,
+                              latestIp: latest?.ipResolution.ipAddress ?? null,
+                              lastResolvedAt: latest?.lastResolvedAt ?? null,
+                            }}
+                          />
+                        );
+                      })
                     ) : (
                       allSubdomains.map((subdomain) => {
                         const hasUrl = subdomain.observedUrls.length > 0;
-                        return (
-                          <div
-                            key={subdomain.id}
-                            className="flex flex-col gap-1 px-5 py-3 sm:grid sm:grid-cols-12 sm:items-center sm:gap-3"
+                        const badge = (
+                          <span
+                            className={[
+                              "relative -top-px shrink-0 rounded border px-1 py-0 text-[8px] font-semibold uppercase tracking-wide leading-none",
+                              hasUrl
+                                ? "border-accent/40 bg-accent/10 text-accent"
+                                : "border-line bg-black/10 text-muted",
+                            ].join(" ")}
                           >
-                            <div className="col-span-6 min-w-0">
-                              <div className="flex min-w-0 items-center gap-2">
-                                <div className="truncate font-mono text-[12px] text-cream">
-                                  {subdomain.hostnameNormalized}
-                                </div>
-                                <span
-                                  className={[
-                                    "relative -top-px shrink-0 rounded border px-1 py-0 text-[8px] font-semibold uppercase tracking-wide leading-none",
-                                    hasUrl
-                                      ? "border-accent/40 bg-accent/10 text-accent"
-                                      : "border-line bg-black/10 text-muted",
-                                  ].join(" ")}
-                                >
-                                  {hasUrl ? "Has URL" : "No URL"}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="col-span-3 font-mono text-[11px] text-muted">
-                              {formatScanDateTime(subdomain.firstSeenAt)}
-                            </div>
-                            <div className="col-span-3 text-left font-mono text-[11px] text-muted sm:text-right">
-                              {formatScanDateTime(subdomain.lastSeenAt)}
-                            </div>
-                          </div>
+                            {hasUrl ? "Has URL" : "No URL"}
+                          </span>
+                        );
+                        const latest = latestSightingsByHostname.get(subdomain.hostnameNormalized);
+                        return (
+                          <ObservedSubdomainRow
+                            key={subdomain.id}
+                            scanJobId={id}
+                            targetDomainId={scan.targetDomainId}
+                            row={{
+                              hostnameNormalized: subdomain.hostnameNormalized,
+                              hasUrlBadge: badge,
+                              ipCount: ipCountsByHostname.get(subdomain.hostnameNormalized) || 0,
+                              latestIp: latest?.ipResolution.ipAddress ?? null,
+                              lastResolvedAt: latest?.lastResolvedAt ?? null,
+                            }}
+                          />
                         );
                       })
                     )}
@@ -1064,7 +1141,12 @@ export default async function ScanObservedPage({
                     totalItems={subdomainsTotal}
                     perPage={perPage}
                     basePath={basePath}
-                    fixedParams={fixedParams}
+                    fixedParams={{
+                      ...fixedParams,
+                      ...(subAll ? { subAll: "1" } : {}),
+                      subSort: subSort.field,
+                      subDir: subSort.dir,
+                    }}
                   />
                 </>
               )}

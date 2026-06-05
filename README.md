@@ -44,7 +44,8 @@ Real-world examples discussed in these presentations include:
 
 ## Important Notice
 
-- **No built-in authentication:** anyone who can reach the app can use the UI and trigger scans. Do not expose SCOPTIX to the public internet without your own access controls (VPN, reverse proxy auth, etc.).
+- **Not for production:** This tool focuses on functionality over hardened security. Use it exclusively in isolated, trusted environments.
+- **No built-in authentication:** Anyone with network access can view findings and trigger scans. Do NOT expose SCOPTIX to the public internet without your own access controls (e.g., VPN, reverse proxy).
 - **Third-party APIs and data:** VirusTotal and the Internet Archive impose their own terms, rate limits, and acceptable-use policies. This repository orchestrates queries and stores results locally; it is not a redistribution of upstream datasets.
 
 -----
