@@ -14,8 +14,13 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 docker compose --profile full ps
 echo ""
+BP=""
+if [ -f .env ]; then
+  BP=$(grep -E '^NEXT_PUBLIC_BASE_PATH=' .env | cut -d '=' -f 2- | tr -d '"' | tr -d "'" | tr -d ' ' || true)
+fi
+
 echo -e "${GREEN}URLs${NC}"
-echo -e "  App:      ${YELLOW}http://localhost:${APP_PORT:-3000}${NC}"
+echo -e "  App:      ${YELLOW}http://localhost:${APP_PORT:-3000}${BP}${NC}"
 echo -e "  Postgres: ${YELLOW}localhost:${POSTGRES_PORT:-5432}${NC}"
 echo -e "  Redis:    ${YELLOW}localhost:${REDIS_PORT:-6379}${NC}"
 echo ""

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiUrl } from "@/lib/api-url";
 
 /**
  * Simplified scan form: just type a domain/subdomain, toggle deep scan, click Start.
@@ -36,7 +37,7 @@ export function NewScanForm({ autoFocus = true }: { autoFocus?: boolean }) {
               .filter(Boolean),
           )]
         : [];
-      const r = await fetch("/api/quick-scan", {
+      const r = await fetch(apiUrl("/api/quick-scan"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({

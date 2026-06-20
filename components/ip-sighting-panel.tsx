@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { apiUrl } from "@/lib/api-url";
 import { IconArrowUpRight, IconCopy, IconInfo, IconX } from "@/components/ui-icons";
 import {
   formatObservedHostnameCount,
@@ -230,7 +231,7 @@ function IpSightingAssociationTimeline({
 }
 
 function sightingsFetchUrl(ipResolutionId: string, scanJobId: string | null | undefined) {
-  const base = `/api/ip-resolutions/${ipResolutionId}/sightings`;
+  const base = apiUrl(`/api/ip-resolutions/${ipResolutionId}/sightings`);
   if (!scanJobId) return base;
   return `${base}?scanJobId=${encodeURIComponent(scanJobId)}`;
 }

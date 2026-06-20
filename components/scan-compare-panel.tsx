@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatScanDateTime } from "@/lib/scan-format";
+import { apiUrl } from "@/lib/api-url";
 
 type CompareOption = {
   id: string;
@@ -141,7 +142,8 @@ export function ScanComparePanel({
   mainTabParamKey?: string;
   mainTabValue?: string;
 }) {
-  const formAction = basePath ?? `/scans/${currentScanId}/compare`;
+  const rawFormAction = basePath ?? `/scans/${currentScanId}/compare`;
+  const formAction = apiUrl(rawFormAction);
   const resetParams = new URLSearchParams();
   if (mainTabParamKey && mainTabValue) resetParams.set(mainTabParamKey, mainTabValue);
   resetParams.set(tabParamKey, tab);

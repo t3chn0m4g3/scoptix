@@ -8,6 +8,7 @@ import {
 import { ThemeDateInput } from "@/components/ui/theme-date-input";
 import { UrlSearchBar } from "@/components/url-search-bar";
 import { isFindingsSearchQueryActive } from "@/lib/findings-search-query";
+import { apiUrl } from "@/lib/api-url";
 
 export function FindingsFiltersPanel({
   clearAllHref,
@@ -82,7 +83,7 @@ export function FindingsFiltersPanel({
           disabled={scanOptions.length <= 1}
         />
 
-        <form method="get" action="/findings" className="space-y-3">
+        <form method="get" action={apiUrl("/findings")} className="space-y-3">
           <input type="hidden" name="perPage" value={String(perPage)} />
           {activeFilters.type ? (
             <input type="hidden" name="type" value={activeFilters.type} />

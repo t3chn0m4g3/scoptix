@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiUrl } from "@/lib/api-url";
 
 export function NewTargetForm() {
   const router = useRouter();
@@ -14,7 +15,7 @@ export function NewTargetForm() {
     setBusy(true);
     setErr(null);
     try {
-      const r = await fetch("/api/targets", {
+      const r = await fetch(apiUrl("/api/targets"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ domain }),

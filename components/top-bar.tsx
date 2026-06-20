@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { TopBarControls } from "@/components/top-bar-controls";
+import { apiUrl } from "@/lib/api-url";
 
 type KeyStatus = {
   total: number;
@@ -15,7 +16,7 @@ export function TopBar({ breadcrumb }: { breadcrumb: string }) {
   useEffect(() => {
     async function fetchKeys() {
       try {
-        const r = await fetch("/api/settings/api-keys", { cache: "no-store" });
+        const r = await fetch(apiUrl("/api/settings/api-keys"), { cache: "no-store" });
         if (!r.ok) return;
         const j = await r.json();
         const keys = (j.keys ?? []) as { isDisabled: boolean }[];

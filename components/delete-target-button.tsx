@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiUrl } from "@/lib/api-url";
 
 /**
  * Delete Target button with confirmation.
@@ -39,7 +40,7 @@ export function DeleteTargetButton({
 
     setBusy(true);
     try {
-      const r = await fetch(`/api/targets/${targetId}`, { method: "DELETE" });
+      const r = await fetch(apiUrl(`/api/targets/${targetId}`), { method: "DELETE" });
       if (!r.ok) {
         const j = await r.json().catch(() => null);
         throw new Error(j?.error ?? `HTTP ${r.status}`);

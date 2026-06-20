@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { apiUrl } from "@/lib/api-url";
 import { CategoryIconPicker } from "@/components/category-icon-picker";
 import { IconPencil, IconTrash } from "@/components/nav-icons";
 import {
@@ -97,10 +98,10 @@ export function SettingsClient({
     setKeysErr(null);
     setExtErr(null);
     const [p, k, e, ae] = await Promise.all([
-      fetch("/api/settings/proxy", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/settings/api-keys", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/settings/extensions", { cache: "no-store" }).then((r) => r.json()),
-      fetch("/api/settings/engines", { cache: "no-store" }).then((r) => r.json()),
+      fetch(apiUrl("/api/settings/proxy"), { cache: "no-store" }).then((r) => r.json()),
+      fetch(apiUrl("/api/settings/api-keys"), { cache: "no-store" }).then((r) => r.json()),
+      fetch(apiUrl("/api/settings/extensions"), { cache: "no-store" }).then((r) => r.json()),
+      fetch(apiUrl("/api/settings/engines"), { cache: "no-store" }).then((r) => r.json()),
     ]);
     setProxyUrl((p.globalProxyUrl as string | null) ?? "");
     setKeys(k.keys as KeyRow[]);
@@ -121,7 +122,7 @@ export function SettingsClient({
     setBusy(true);
     setKeysErr(null);
     try {
-      const r = await fetch("/api/settings/proxy", {
+      const r = await fetch(apiUrl("/api/settings/proxy"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: proxyUrl.trim() ? proxyUrl.trim() : null }),
@@ -140,7 +141,7 @@ export function SettingsClient({
     setBusy(true);
     setKeysErr(null);
     try {
-      const r = await fetch("/api/settings/api-keys", {
+      const r = await fetch(apiUrl("/api/settings/api-keys"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ label, secret }),
@@ -160,7 +161,7 @@ export function SettingsClient({
     setBusy(true);
     setKeysErr(null);
     try {
-      const r = await fetch(`/api/settings/api-keys/${id}`, {
+      const r = await fetch(apiUrl(`/api/settings/api-keys/${id}`), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ isDisabled: !isDisabled }),
@@ -181,7 +182,7 @@ export function SettingsClient({
     setBusy(true);
     setKeysErr(null);
     try {
-      const r = await fetch(`/api/settings/api-keys/${id}`, { method: "DELETE" });
+      const r = await fetch(apiUrl(`/api/settings/api-keys/${id}`), { method: "DELETE" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       await refresh();
     } catch (e) {
@@ -227,7 +228,7 @@ export function SettingsClient({
     setBusy(true);
     setEnginesErr(null);
     try {
-      const r = await fetch("/api/settings/engines", {
+      const r = await fetch(apiUrl("/api/settings/engines"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ activeEngines: draftEngines }),
@@ -255,7 +256,7 @@ export function SettingsClient({
     setBusy(true);
     setExtErr(null);
     try {
-      const r = await fetch("/api/settings/extensions/categories", {
+      const r = await fetch(apiUrl("/api/settings/extensions/categories"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -283,7 +284,7 @@ export function SettingsClient({
     setBusy(true);
     setExtErr(null);
     try {
-      const r = await fetch("/api/settings/extensions/suffixes", {
+      const r = await fetch(apiUrl("/api/settings/extensions/suffixes"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ categoryId, suffix: raw }),
@@ -333,7 +334,7 @@ export function SettingsClient({
     setBusy(true);
     setExtErr(null);
     try {
-      const r = await fetch(`/api/settings/extensions/categories/${id}`, {
+      const r = await fetch(apiUrl(`/api/settings/extensions/categories/${id}`), {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ displayName, slug, iconKey: editCatIconKey }),
@@ -360,7 +361,7 @@ export function SettingsClient({
     setBusy(true);
     setExtErr(null);
     try {
-      const r = await fetch(`/api/settings/extensions/categories/${id}`, { method: "DELETE" });
+      const r = await fetch(apiUrl(`/api/settings/extensions/categories/${id}`), { method: "DELETE" });
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
       void j;
@@ -378,7 +379,7 @@ export function SettingsClient({
     setBusy(true);
     setExtErr(null);
     try {
-      const r = await fetch(`/api/settings/extensions/suffixes/${ruleId}`, { method: "DELETE" });
+      const r = await fetch(apiUrl(`/api/settings/extensions/suffixes/${ruleId}`), { method: "DELETE" });
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error(j?.error ?? `HTTP ${r.status}`);
       void j;

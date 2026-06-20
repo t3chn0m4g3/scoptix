@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useMemo, useRef, useState } from "react";
+import { apiUrl } from "@/lib/api-url";
 import { IconAlertTriangle, IconTrash } from "@/components/ui-icons";
 
 export type ScanHistoryRow = {
@@ -80,8 +81,8 @@ export function ScanHistoryPanel({ scans }: { scans: ScanHistoryRow[] }) {
     try {
       const response =
         pendingDelete.ids.length === 1
-          ? await fetch(`/api/scans/${pendingDelete.ids[0]}`, { method: "DELETE" })
-          : await fetch("/api/scans/delete", {
+          ? await fetch(apiUrl(`/api/scans/${pendingDelete.ids[0]}`), { method: "DELETE" })
+          : await fetch(apiUrl("/api/scans/delete"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ ids: pendingDelete.ids }),

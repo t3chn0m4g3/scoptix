@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { apiUrl } from "@/lib/api-url";
 import {
   canViewPartialObservedResults,
   partialObservedPhaseLabel,
@@ -33,7 +34,7 @@ export function ScanDetailClient({ id }: { id: string }) {
     let active = true;
     async function poll() {
       try {
-        const r = await fetch(`/api/scans/${id}`, { cache: "no-store" });
+        const r = await fetch(apiUrl(`/api/scans/${id}`), { cache: "no-store" });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
         if (active) setScan(j.scan);
@@ -53,7 +54,7 @@ export function ScanDetailClient({ id }: { id: string }) {
     if (!confirm("Are you sure you want to stop this scan?")) return;
     setCancelling(true);
     try {
-      const r = await fetch(`/api/scans/${id}/cancel`, { method: "POST" });
+      const r = await fetch(apiUrl(`/api/scans/${id}/cancel`), { method: "POST" });
       if (!r.ok) {
         const j = await r.json().catch(() => null);
         throw new Error(j?.error ?? `HTTP ${r.status}`);

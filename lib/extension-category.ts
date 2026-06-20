@@ -15,10 +15,16 @@ export type SidebarExtensionCategory = {
 export async function loadSidebarExtensionCategories(
   prisma: PrismaClient,
 ): Promise<SidebarExtensionCategory[]> {
-  return prisma.extensionCategory.findMany({
-    select: { id: true, slug: true, displayName: true, iconKey: true },
-    orderBy: [{ displayName: "asc" }, { slug: "asc" }],
-  });
+  try {
+    return await prisma.extensionCategory.findMany({
+      select: { id: true, slug: true, displayName: true, iconKey: true },
+      orderBy: [{ displayName: "asc" }, { slug: "asc" }],
+    });
+  } catch {
+    // Graceful fallback during Next.js static build (where DB is unavailable)
+    // or if the DB is temporarily unreachable.
+    return [];
+  }
 }
 
 export async function loadExtensionSuffixRules(

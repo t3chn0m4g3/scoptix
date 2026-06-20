@@ -40,9 +40,14 @@ else
   echo -e "${GREEN}Database migrations OK.${NC}"
 fi
 
+BP=""
+if [ -f .env ]; then
+  BP=$(grep -E '^NEXT_PUBLIC_BASE_PATH=' .env | cut -d '=' -f 2- | tr -d '"' | tr -d "'" | tr -d ' ' || true)
+fi
+
 echo ""
 echo -e "${GREEN}Infrastructure ready.${NC} Starting dev server and worker (Ctrl+C to stop)..."
-echo -e "  App: ${YELLOW}http://localhost:3000${NC}"
+echo -e "  App: ${YELLOW}http://localhost:3000${BP}${NC}"
 echo ""
 
 exec npm run dev:all

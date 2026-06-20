@@ -59,6 +59,22 @@ Real-world examples discussed in these presentations include:
 
 -----
 
+## Reverse Proxy / Base Path
+
+If you need to deploy SCOPTIX behind a reverse proxy under a specific sub-path (e.g., `https://your-server.com/your-base-path/`), you can configure the `NEXT_PUBLIC_BASE_PATH` environment variable in your `.env` file.
+
+```env
+# .env
+NEXT_PUBLIC_BASE_PATH="/your-base-path"
+```
+
+**Important Notes:**
+- The base path **must** start with a slash and **must not end** with a slash.
+- Because Next.js bakes this value into the build, **you must rebuild the application** after changing it.
+- Do not configure this if you are deploying to a root domain or subdomain (`https://scoptix.your-server.com/`). Leave it empty or undefined.
+
+-----
+
 ## Prerequisites
 
 - Node.js (LTS recommended) and npm

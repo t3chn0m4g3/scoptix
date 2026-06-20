@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { IconChevronDown, IconDownload } from "@/components/ui-icons";
+import { apiUrl } from "@/lib/api-url";
 import type { ObservedAvailability } from "@/lib/scan-observed";
 import type { ScanExportType } from "@/lib/scan-export";
 
@@ -75,7 +76,7 @@ export function ScanExportMenu({
   }, [open]);
 
   function hrefFor(type: ScanExportType) {
-    return `/api/scans/${scanId}/export?type=${type}`;
+    return apiUrl(`/api/scans/${scanId}/export?type=${type}`);
   }
 
   return (

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type ComponentType } from "react";
+import { apiUrl } from "@/lib/api-url";
 import { useTheme } from "@/components/theme-provider";
 import { IconScans, IconTargets } from "@/components/nav-icons";
 import { getCategoryIconForCategory } from "@/lib/category-icons";
@@ -145,7 +146,7 @@ export function Sidebar({ categories }: { categories: SidebarExtensionCategory[]
         <Link href="/" className="flex items-center gap-3">
           <div className="shadow-lift relative size-8 shrink-0 overflow-hidden rounded-xl border border-line bg-lift">
             <Image
-              src="/logo.png"
+              src={apiUrl("/logo.png")}
               alt="Scoptix"
               width={32}
               height={32}

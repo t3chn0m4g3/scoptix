@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { PageSizeSelect } from "@/components/page-size-select";
+import { apiUrl } from "@/lib/api-url";
 
 export const PAGE_SIZE_OPTIONS = [10, 15, 25, 50, 75, 100] as const;
 export const DEFAULT_PAGE_SIZE = 10;
@@ -203,7 +204,7 @@ export function TablePagination({
           <PageSizeSelect value={perPage} options={pageSizeOptions} />
         </div>
 
-        <form className="flex items-center gap-1.5" action={basePath} method="get">
+        <form className="flex items-center gap-1.5" action={apiUrl(basePath)} method="get">
           {Object.entries(fixedParams).map(([key, value]) => (
             <input key={key} type="hidden" name={key} value={value} />
           ))}
