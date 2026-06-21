@@ -32,6 +32,7 @@
     "react-dom": "^19.1.0",
     "socks-proxy-agent": "^8.0.5",
     "tldts": "^7.0.6",
+    "wappalyzer-core": "^6.10.66",
     "zod": "^3.24.2"
   },
   "prisma": {

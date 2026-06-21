@@ -10,6 +10,7 @@ import {
   IconGlobe,
   IconLink,
   IconServer,
+  IconTerminal,
 } from "@/components/ui-icons";
 import { ScanComparePanel } from "@/components/scan-compare-panel";
 import { ScanDetailHeader } from "@/components/scans/scan-detail-header";
@@ -18,6 +19,7 @@ import { ScanDetailTabs } from "@/components/scans/scan-detail-tabs";
 import { ScanMetricCards } from "@/components/scans/scan-metric-cards";
 import { ScanSummaryTab } from "@/components/scans/scan-summary-tab";
 import { ScanIpsTab } from "@/components/scans/scan-ips-tab";
+import { ScanTechTab, type ScanTechRow } from "@/components/scans/scan-tech-tab";
 import { SubdomainSearchBar } from "@/components/subdomain-search-bar";
 import { ObservedSubdomainRow } from "@/components/scans/observed-subdomain-row";
 import { UrlFiltersToolbar } from "@/components/url-filters-toolbar";
@@ -139,6 +141,7 @@ export default async function ScanObservedPage({
     tabRaw === "subdomains" ||
     tabRaw === "urls" ||
     tabRaw === "ips" ||
+    tabRaw === "tech" ||
     tabRaw === "findings" ||
     tabRaw === "compare"
       ? tabRaw
@@ -225,6 +228,14 @@ export default async function ScanObservedPage({
     availability.subdomains === "ready" ? observedCounts.subdomains : null;
   const observedUrlCount = availability.urls === "ready" ? observedCounts.urls : null;
   const observedIpCount = availability.ips === "ready" ? observedCounts.ips : null;
+
+  // Always compute the technologies count so the tab badge shows before activation.
+  const techDistinct = await prisma.subdomainTechnology.findMany({
+    where: { scanJobId: id },
+    distinct: ["name"],
+    select: { name: true },
+  });
+  const observedTechCount = techDistinct.length;
 
   const urlCategoryCounts =
     availability.urls === "ready"
@@ -640,6 +651,83 @@ export default async function ScanObservedPage({
         }))
       : [];
 
+  /* ── Technologies (Wappalyzer) ── */
+  // Group SubdomainTechnology rows detected during this scan by technology name.
+  const techRecords =
+    tab === "tech"
+      ? await prisma.subdomainTechnology.findMany({
+          where: { scanJobId: id },
+          orderBy: [{ name: "asc" }],
+          select: {
+            name: true,
+            version: true,
+            categories: true,
+            iconName: true,
+            website: true,
+            confidence: true,
+            subdomain: { select: { hostnameNormalized: true } },
+          },
+        })
+      : [];
+
+  const techGrouped: ScanTechRow[] = (() => {
+    if (tab !== "tech") return [];
+    const map = new Map<
+      string,
+      {
+        name: string;
+        iconName: string | null;
+        website: string | null;
+        categories: Set<string>;
+        versions: Set<string>;
+        hosts: Map<string, string | null>;
+      }
+    >();
+    for (const r of techRecords) {
+      const host = r.subdomain?.hostnameNormalized;
+      if (!host) continue;
+      let g = map.get(r.name);
+      if (!g) {
+        g = {
+          name: r.name,
+          iconName: r.iconName,
+          website: r.website,
+          categories: new Set(),
+          versions: new Set(),
+          hosts: new Map(),
+        };
+        map.set(r.name, g);
+      }
+      for (const c of r.categories) g.categories.add(c);
+      if (r.version) g.versions.add(r.version);
+      // Keep the most specific (non-null) version per host.
+      if (!g.hosts.has(host) || (r.version && !g.hosts.get(host))) {
+        g.hosts.set(host, r.version);
+      }
+    }
+    return Array.from(map.values())
+      .map((g) => ({
+        name: g.name,
+        iconName: g.iconName,
+        website: g.website,
+        categories: Array.from(g.categories).sort(),
+        versions: Array.from(g.versions).sort(),
+        hosts: Array.from(g.hosts.entries())
+          .map(([hostnameNormalized, version]) => ({ hostnameNormalized, version }))
+          .sort((a, b) => a.hostnameNormalized.localeCompare(b.hostnameNormalized)),
+        hostCount: g.hosts.size,
+      }))
+      .sort((a, b) => b.hostCount - a.hostCount || a.name.localeCompare(b.name));
+  })();
+
+  const techTotal = techGrouped.length;
+  const techPages = Math.max(1, Math.ceil(techTotal / perPage));
+  const safeTechPage = Math.min(page, techPages);
+  const techRows = techGrouped.slice(
+    (safeTechPage - 1) * perPage,
+    safeTechPage * perPage,
+  );
+
   function tabHref(nextTab: string) {
     const q = new URLSearchParams();
     q.set("tab", nextTab);
@@ -679,6 +767,13 @@ export default async function ScanObservedPage({
       icon: IconServer,
       href: tabHref("ips"),
       count: countLabel(observedIpCount),
+    },
+    {
+      key: "tech",
+      label: "Technologies",
+      icon: IconTerminal,
+      href: tabHref("tech"),
+      count: countLabel(observedTechCount),
     },
     {
       key: "findings",
@@ -1276,6 +1371,18 @@ export default async function ScanObservedPage({
               basePath={basePath}
               isCompleted={isCompleted}
               sort={ipSort}
+            />
+          )}
+
+          {tab === "tech" && (
+            <ScanTechTab
+              technologies={techRows}
+              totalItems={techTotal}
+              currentPage={safeTechPage}
+              totalPages={techPages}
+              perPage={perPage}
+              basePath={basePath}
+              isCompleted={isCompleted}
             />
           )}
         </div>

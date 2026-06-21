@@ -19,6 +19,7 @@ import {
   subdomainsFromUndetectedUrls,
   type VtDomainReportV2,
 } from "@/engines/virustotal";
+import type { DetectedTechnology } from "@/engines/wappalyzer";
 import { pathnameExtensionFromUrl } from "@/lib/categorization";
 import {
   categoryIdForPathnameExtension,
@@ -792,6 +793,57 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
 
   await checkCancelled(prisma, scanJobId);
 
+  /* ════════════════════════════════════════════
+   * Phase T5B: Wappalyzer (technology fingerprinting per subdomain)
+   * ════════════════════════════════════════════ */
+  if (engines.includes(EngineProvider.WAPPALYZER)) {
+    const { fingerprintUrl } = await import("@/engines/wappalyzer");
+
+    // Fingerprint every subdomain discovered for this target (full recon set),
+    // plus the apex itself.
+    const subRows = await prisma.subdomain.findMany({
+      where: { targetDomainId: target.id },
+      select: { id: true, hostnameNormalized: true },
+    });
+    const hostTargets = new Map<string, string | null>();
+    hostTargets.set(targetNorm, null); // apex (no subdomain row)
+    for (const s of subRows) hostTargets.set(s.hostnameNormalized, s.id);
+
+    const hosts = Array.from(hostTargets.entries());
+    await prisma.scanJob.update({
+      where: { id: scanJobId },
+      data: { phase: ScanPhase.T5B_WAPPALYZER, progressCurrent: 0, progressTotal: hosts.length },
+    });
+
+    const WAPP_CONCURRENCY = 5;
+    let wappDone = 0;
+    for (let i = 0; i < hosts.length; i += WAPP_CONCURRENCY) {
+      await checkCancelled(prisma, scanJobId);
+      const batch = hosts.slice(i, i + WAPP_CONCURRENCY);
+      await Promise.all(
+        batch.map(async ([host, subdomainId]) => {
+          // Try https first, fall back to http on empty result.
+          let techs = await fingerprintUrl({ url: `https://${host}`, proxyUrl: globalProxy });
+          if (techs.length === 0) {
+            techs = await fingerprintUrl({ url: `http://${host}`, proxyUrl: globalProxy });
+          }
+          if (subdomainId && techs.length > 0) {
+            await persistSubdomainTechnologies(prisma, subdomainId, scanJobId, techs);
+          }
+        }),
+      );
+      wappDone += batch.length;
+      if (shouldUpdateProgress(wappDone, hosts.length, 2)) {
+        await prisma.scanJob.update({
+          where: { id: scanJobId },
+          data: { progressCurrent: wappDone, progressTotal: hosts.length },
+        });
+      }
+    }
+  }
+
+  await checkCancelled(prisma, scanJobId);
+
   const finalCheck = await prisma.scanJob.findUnique({ where: { id: scanJobId }, select: { status: true } });
   if (finalCheck?.status !== ScanJobStatus.CANCELLED) {
     await syncTargetCachedFindingCount(prisma, target.id);
@@ -804,6 +856,40 @@ export async function runScanJob(prisma: PrismaClient, redis: Redis, scanJobId: 
         completedAt: new Date(),
         progressCurrent: observed.urls,
         progressTotal,
+      },
+    });
+  }
+}
+
+async function persistSubdomainTechnologies(
+  prisma: PrismaClient,
+  subdomainId: string,
+  scanJobId: string,
+  techs: DetectedTechnology[],
+) {
+  if (techs.length === 0) return;
+  for (const t of techs) {
+    await prisma.subdomainTechnology.upsert({
+      where: { subdomainId_name: { subdomainId, name: t.name } },
+      create: {
+        subdomainId,
+        scanJobId,
+        name: t.name,
+        version: t.version,
+        categories: t.categories,
+        confidence: t.confidence,
+        iconName: t.iconName,
+        website: t.website,
+        cpe: t.cpe,
+      },
+      update: {
+        scanJobId,
+        version: t.version,
+        categories: t.categories,
+        confidence: t.confidence,
+        iconName: t.iconName,
+        website: t.website,
+        cpe: t.cpe,
       },
     });
   }

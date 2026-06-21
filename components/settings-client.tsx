@@ -48,6 +48,11 @@ const SCAN_ENGINE_OPTIONS = [
     label: "Wayback Machine",
     description: "Historical URLs from Internet Archive crawls during scans.",
   },
+  {
+    id: "WAPPALYZER",
+    label: "Wappalyzer",
+    description: "Technology fingerprinting (CMS, frameworks, servers) per subdomain.",
+  },
 ] as const;
 
 const settingsPrimaryButtonClass =

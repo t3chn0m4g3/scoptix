@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { apiUrl } from "@/lib/api-url";
-import { IconArrowUpRight, IconCopy, IconInfo, IconX } from "@/components/ui-icons";
+import { TechIcon } from "@/components/scans/tech-icon";
+import { IconArrowUpRight, IconChevronDown, IconCopy, IconInfo, IconX } from "@/components/ui-icons";
 import {
   formatPassiveDnsPanelDateTime,
   formatVtPassiveDnsDateTime,
@@ -36,6 +37,22 @@ type PanelData = {
     observedIpCount: number;
   };
   sightings: SightingData[];
+};
+
+type TechnologyItem = {
+  name: string;
+  version: string | null;
+  categories: string[];
+  confidence: number;
+  iconName: string | null;
+  website: string | null;
+  cpe: string | null;
+  lastSeenAt: string;
+};
+
+type TechnologiesData = {
+  technologies: TechnologyItem[];
+  summary: { technologyCount: number };
 };
 
 type TimelineItem = {
@@ -215,6 +232,149 @@ function HostnameSightingAssociationTimeline({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function technologiesFetchUrl(targetDomainId: string, hostnameNormalized: string) {
+  return apiUrl(
+    `/api/targets/${targetDomainId}/subdomains/${encodeURIComponent(hostnameNormalized)}/technologies`,
+  );
+}
+
+function SubdomainTechnologiesSection({
+  targetDomainId,
+  hostnameNormalized,
+}: {
+  targetDomainId: string;
+  hostnameNormalized: string;
+}) {
+  const [data, setData] = useState<TechnologiesData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  // Collapsed view shows roughly two rows of chips.
+  const COLLAPSED_MAX_PX = 76;
+
+  useEffect(() => {
+    let ignore = false;
+    setLoading(true);
+    setExpanded(false);
+    fetch(technologiesFetchUrl(targetDomainId, hostnameNormalized))
+      .then((res) => (res.ok ? res.json() : { technologies: [], summary: { technologyCount: 0 } }))
+      .then((json: TechnologiesData) => {
+        if (!ignore) {
+          setData(json);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setData({ technologies: [], summary: { technologyCount: 0 } });
+          setLoading(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [targetDomainId, hostnameNormalized]);
+
+  const techs = useMemo(() => data?.technologies ?? [], [data]);
+
+  // Detect whether the chip list exceeds the collapsed height — only then
+  // do we show the expand/collapse toggle. Re-measure when data changes.
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const check = () => setOverflowing(el.scrollHeight > COLLAPSED_MAX_PX + 4);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [techs]);
+
+  const showToggle = overflowing;
+  const collapsed = showToggle && !expanded;
+
+  return (
+    <div className="mb-6 text-left">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-[13px] font-semibold text-cream">Technologies</h3>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted">
+            Software fingerprinted on this subdomain (Wappalyzer).
+          </p>
+        </div>
+        {techs.length > 0 ? (
+          <span className="shrink-0 rounded-md border border-line bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-muted">
+            {techs.length}
+          </span>
+        ) : null}
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center py-6">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-r-transparent" />
+        </div>
+      ) : techs.length === 0 ? (
+        <div className="rounded-lg border border-line bg-white/[0.02] px-4 py-3 text-[11px] text-muted">
+          No technologies detected. Run a scan with the Wappalyzer engine enabled.
+        </div>
+      ) : (
+        <div className="relative">
+          <div
+            ref={listRef}
+            className="flex flex-wrap gap-2 overflow-hidden transition-[max-height] duration-300 ease-out"
+            style={{ maxHeight: collapsed ? COLLAPSED_MAX_PX : listRef.current?.scrollHeight ?? "none" }}
+          >
+          {techs.map((t) => {
+            const label = t.version ? `${t.name} ${t.version}` : t.name;
+            const cats = t.categories.join(", ");
+            const chip = (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md border border-line bg-white/[0.03] px-2.5 py-1.5 font-mono text-[11px] text-cream transition-colors hover:border-accent/40 hover:text-accent"
+                title={cats ? `${label} — ${cats}` : label}
+              >
+                <TechIcon name={t.name} iconName={t.iconName} size={14} />
+                <span className="truncate">{label}</span>
+                {cats ? (
+                  <span className="max-w-[120px] truncate text-[9px] font-medium uppercase tracking-wide text-muted">
+                    {t.categories[0]}
+                  </span>
+                ) : null}
+              </span>
+            );
+            return t.website ? (
+              <a
+                key={t.name}
+                href={t.website}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="focus:outline-none"
+              >
+                {chip}
+              </a>
+            ) : (
+              <div key={t.name}>{chip}</div>
+            );
+          })}
+          </div>
+          {showToggle ? (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-accent transition-colors hover:text-accent-dim focus:outline-none"
+            >
+              {expanded ? "Show less" : `Show all ${techs.length}`}
+              <IconChevronDown
+                className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+              />
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 }
@@ -415,6 +575,13 @@ export function HostnameSightingPanel({ targetDomainId, hostnameNormalized, scan
                   </div>
                 </div>
               </div>
+
+              <div className="mb-6 border-t border-line" aria-hidden />
+
+              <SubdomainTechnologiesSection
+                targetDomainId={targetDomainId}
+                hostnameNormalized={displayHostname}
+              />
 
               <div className="mb-6 border-t border-line" aria-hidden />
 

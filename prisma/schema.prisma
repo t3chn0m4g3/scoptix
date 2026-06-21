@@ -11,6 +11,7 @@ enum EngineProvider {
   VIRUSTOTAL
   WAYBACK_MACHINE
   URLSCAN
+  WAPPALYZER
 }
 
 enum ScanJobStatus {
@@ -28,6 +29,7 @@ enum ScanPhase {
   T3_WAYBACK_APEX
   T4_WAYBACK_SUBDOMAINS
   T5_CONSOLIDATE
+  T5B_WAPPALYZER
   T6_ANALYSIS
 }
 
@@ -79,10 +81,32 @@ model Subdomain {
   discoveredUrls     DiscoveredUrl[]
   observedInScans    ScanObservedSubdomain[]
   observedUrls       ScanObservedUrl[]
+  technologies       SubdomainTechnology[]
 
   @@unique([targetDomainId, hostnameNormalized])
   @@index([targetDomainId])
   @@map("subdomain")
+}
+
+model SubdomainTechnology {
+  id          String    @id @default(uuid())
+  subdomainId String    @map("subdomain_id")
+  subdomain   Subdomain @relation(fields: [subdomainId], references: [id], onDelete: Cascade)
+  scanJobId   String?   @map("scan_job_id")
+  name        String
+  version     String?
+  categories  String[]
+  confidence  Int       @default(0)
+  iconName    String?   @map("icon_name")
+  website     String?
+  cpe         String?
+  firstSeenAt DateTime  @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime  @updatedAt @map("last_seen_at")
+
+  @@unique([subdomainId, name])
+  @@index([subdomainId])
+  @@index([scanJobId])
+  @@map("subdomain_technology")
 }
 
 model ScanJob {
