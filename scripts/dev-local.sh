@@ -28,6 +28,9 @@ fi
 
 bash scripts/ensure-env.sh
 
+echo -e "${CYAN}Checking and installing Node.js dependencies...${NC}"
+npm install
+
 echo -e "${CYAN}Starting Postgres and Redis...${NC}"
 docker compose up -d postgres redis
 
@@ -39,6 +42,9 @@ if ! npm run db:migrate >/dev/null 2>&1; then
 else
   echo -e "${GREEN}Database migrations OK.${NC}"
 fi
+
+echo -e "${CYAN}Generating Prisma Client...${NC}"
+npx prisma generate
 
 BP=""
 if [ -f .env ]; then

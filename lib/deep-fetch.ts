@@ -19,6 +19,10 @@ export async function deepFetchText(params: {
     httpsAgent: agent,
     httpAgent: agent,
     proxy: false,
+    maxRedirects: 5,
+    beforeRedirect: (options) => {
+      assertUrlSafeForServerFetch(options.href);
+    },
     validateStatus: (s) => s >= 200 && s < 400,
     transformResponse: [(data) => data],
   });
