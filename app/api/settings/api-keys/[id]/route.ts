@@ -22,7 +22,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       ...(parsed.data.isDisabled !== undefined ? { isDisabled: parsed.data.isDisabled } : {}),
     },
   });
-  return NextResponse.json({ key: updated });
+  return NextResponse.json({
+    key: {
+      id: updated.id,
+      label: updated.label,
+      provider: updated.provider,
+      proxyUrl: updated.proxyUrl,
+      isDisabled: updated.isDisabled,
+    },
+  });
 }
 
 export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
